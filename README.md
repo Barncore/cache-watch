@@ -27,6 +27,16 @@ Sending to a 442k-token conversation that went cold days ago. The message waits 
 
 The only request cache-watch makes of its own is the keepwarm ping: a one-line question over your conversation, whose reply is thrown away and never shows in the chat. It keeps a few settings in Claude Code's plugin store on your machine, listed in [the reference](docs/commands.md#what-it-stores).
 
+### Keepwarm in action
+
+![Typing /keepwarm in the prompt box: the command menu shows keepwarm and its description, while the footer reads "cache warm · 47m left"](docs/images/keepwarm-menu.png)
+
+Type `/keepwarm` and the command menu says what it takes: nothing for 6 hours, a window such as `90m`, `always`, `off` or `status`. Before you arm it, the footer counts down the cache's own hour: 47 minutes left here.
+
+![After sending /keepwarm 6h, the reply reads "keepwarm on for 6h00m, a ping 55m after each idle stretch keeps the cache read, not re-written", and the footer reads "cache warm · 6h00m left"](docs/images/keepwarm-on.png)
+
+`/keepwarm 6h` arms a six-hour window. The reply confirms it, and the footer switches from the cache's hour to the window's time: 6h00m left. From here, every time you go quiet for 55 minutes, a ping keeps the cache warm until the window runs out.
+
 ## Install
 
 Mods install from a terminal. The desktop app's Code tab doesn't offer the `/plugin` command, so run these once in PowerShell, Terminal, or any shell where `claude` works:
