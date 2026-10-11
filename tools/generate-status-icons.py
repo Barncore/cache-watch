@@ -9,7 +9,7 @@ import subprocess
 root = Path(__file__).resolve().parents[1]
 icons = {}
 for theme in ("dark", "light"):
-    original = (root / f"site/assets/cache-tax-{theme}.svg").read_text()
+    original = (root / f"assets/cube-{theme}.svg").read_text()
     brand = "#d97757" if theme == "dark" else "#c15f3c"
     colors = {"warm": "#78b85a" if theme == "dark" else "#397527",
               "cold": brand, "neutral": "#92928b" if theme == "dark" else "#686861"}

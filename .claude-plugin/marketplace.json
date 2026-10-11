@@ -1,0 +1,16 @@
+{
+  "name": "cache-watch",
+  "owner": {
+    "name": "Barncore"
+  },
+  "metadata": {
+    "description": "cache-watch, a Claude Code mod that watches the prompt cache."
+  },
+  "plugins": [
+    {
+      "name": "cache-watch",
+      "source": "./",
+      "description": "Watches the prompt cache: warm or cold in the prompt footer, a hold card before a send that would re-write a cold cache, and keepwarm pings while you are away."
+    }
+  ]
+}

@@ -2,7 +2,7 @@ import { describe, expect, mock, test, tier } from 'claude-code/testing'
 import type { CommandRunInput, ConfigSetInput, ModelForkResult, On, PromptSubmitInput, RenderPropsOf, SessionStartInput, TurnCompleteInput, TurnUsage } from 'claude-code'
 
 import { statusIcons } from '../hooks/status-icons'
-import { fmtDuration, freshState, parseDuration, resetForClear, seedFromResume } from '../hooks/register'
+import { HELD_DROP, bar, canHold, compactStatsSvg, fmtDuration, footerLabel, freshState, parseDuration, quoted, resetForClear, seedFromResume, statsSvg, warmShare } from '../hooks/register'
 
 tier('user')
 
@@ -23,7 +23,7 @@ const turn = (over: Partial<AnsweredTurn> = {}): TurnCompleteInput => ({
   answer: 'ok', durationMs: 1000, isAborted: false, turnId: 't' + ++turns, reason: 'answer', usage: usage(), ...over,
 })
 
-const run = (command: 'keepwarm' | 'cache-tax', args: string): CommandRunInput => ({
+const run = (command: 'keepwarm' | 'cache-watch', args: string): CommandRunInput => ({
   command, args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 },
 })
 
@@ -65,7 +65,8 @@ function world(on: On, forkAnswers: ForkAnswer[], opts: { store?: Map<string, un
   on('classic.SessionStart', () => ({}))
   on('ui.log', ($, e) => { logs.push(e.text); return { value: undefined } })
   on('ui.status', ($, e) => { status.push(e.text); return { value: undefined } })
-  on('ui.render', ($, e) => $.ui.resolve(e).Text({ children: [opts.bandText ?? ''] }))
+  // The footer stub draws its labels, so a test can see what a hook passed down.
+  on('ui.render', ($, e) => $.ui.resolve(e).Text({ children: [e.component === 'SessionMode' ? ['modes', ...e.props.modes].join(' & ') : opts.bandText ?? ''] }))
   on('model.fork', () => {
     forks.push(forks.length)
     const a = forkAnswers.shift()
@@ -91,7 +92,7 @@ describe('cache indicator', () => {
     const w = world(on, [])
     await $.session.start({ ...session, surface: 'terminal', isInteractive: true })
     await $.command.run(run('keepwarm', '90m'))
-    const ui = await $.ui.mount({ plugin: 'cache-tax', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
     await $.turn.complete(turn())
     await $.command.run(run('keepwarm', '2h'))
     expect((await ui.find({ type: 'Image' }))?.props.source).toEqual({ png: statusIcons.dark.warm.png })
@@ -109,7 +110,7 @@ describe('cache indicator', () => {
     world(on, [], { denyTheme: true })
     await $.session.start({ ...session, surface: 'terminal', isInteractive: true })
     await $.command.run(run('keepwarm', '90m'))
-    const ui = await $.ui.mount({ plugin: 'cache-tax', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
     expect((await $.config.set(themeChange('light'))).deny).toBe('theme locked')
     await $.turn.complete(turn())
     expect((await ui.find({ type: 'Image' }))?.props.source).toEqual({ png: statusIcons.dark.warm.png })
@@ -120,7 +121,7 @@ describe('cache indicator', () => {
     world(on, [], { writtenTheme: 'light' })
     await $.session.start({ ...session, surface: 'terminal', isInteractive: true })
     await $.command.run(run('keepwarm', '90m'))
-    const ui = await $.ui.mount({ plugin: 'cache-tax', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
     await $.config.set(themeChange('dark'))
     expect((await ui.find({ type: 'Image' }))?.props.source).toEqual({ png: statusIcons.light.neutral.png })
   })
@@ -132,11 +133,11 @@ describe('cache indicator', () => {
       const w = world(on, [], { theme })
       await $.session.start({ ...session, surface, isInteractive: true })
       await $.command.run(run('keepwarm', '3h every 90m'))
-      const ui = await $.ui.mount({ plugin: 'cache-tax', surface, component: 'AbovePrompt', props: bandProps })
+      const ui = await $.ui.mount({ plugin: 'cache-watch', surface, component: 'AbovePrompt', props: bandProps })
       const type = surface === 'terminal' ? 'Image' : 'Svg'
       const source = (variant: typeof statusIcons.dark) => surface === 'terminal' ? { png: variant.neutral.png } : variant.neutral.svg
       expect((await ui.find({ type }))?.props.source).toEqual(source(statusIcons.dark))
-      expect((await ui.find({ type }))?.props.alt).toBe(surface === 'terminal' ? '[>]' : 'Cache Tax')
+      expect((await ui.find({ type }))?.props.alt).toBe(surface === 'terminal' ? '[>]' : 'Cache Watch')
       if (surface === 'terminal') {
         expect((await ui.find({ type }))?.props.columns).toBe(3)
         expect((await ui.find({ type }))?.props.rows).toBe(1)
@@ -149,7 +150,8 @@ describe('cache indicator', () => {
       expect((await ui.find({ type: 'Text', text: /^cold$/ }))?.props.color).toBe('#c15f3c')
       expect(w.forks.length).toBe(0)
       await $.command.run(run('keepwarm', 'off'))
-      expect(await ui.find({ type })).toBe(undefined)
+      // cache-watch: with keepwarm off the row stays, showing the cache clock.
+      expect((await ui.find({ type: 'Text', text: 'cache-watch' }))?.text).toMatch(/cold.*cold for 0m/)
     })
 
     test(`${surface}: NO_COLOR uses a bold text icon and uncolored state`, async ($, on) => {
@@ -158,7 +160,7 @@ describe('cache indicator', () => {
       await $.session.start({ ...session, surface, isInteractive: true })
       await $.turn.complete(turn())
       await $.command.run(run('keepwarm', '90m'))
-      const ui = await $.ui.mount({ plugin: 'cache-tax', surface, component: 'AbovePrompt', props: bandProps })
+      const ui = await $.ui.mount({ plugin: 'cache-watch', surface, component: 'AbovePrompt', props: bandProps })
       expect(await ui.find({ type: 'Image' })).toBe(undefined)
       expect(await ui.find({ type: 'Svg' })).toBe(undefined)
       expect((await ui.find({ type: 'Text', text: /^\[>\]$/ }))?.props.bold).toBe(true)
@@ -171,26 +173,27 @@ describe('cache indicator', () => {
       const clock = mock.clock(on, { now: 10 * HOUR })
       const w = world(on, [], { bandText: 'other mod' })
       await $.session.start({ ...session, surface, isInteractive: true })
-      const ui = await $.ui.mount({ plugin: 'cache-tax', surface, component: 'AbovePrompt', props: bandProps })
-      expect(await ui.find({ text: 'cache-tax' })).toBe(undefined)
+      const ui = await $.ui.mount({ plugin: 'cache-watch', surface, component: 'AbovePrompt', props: bandProps })
+      expect(await ui.find({ text: 'cache-watch' })).toBe(undefined)
       await $.command.run(run('keepwarm', '3h every 90m'))
       expect((await ui.find({ type: 'Text', text: /^(warm|cold|unknown|stopped)$/ }))?.props.color).toBe(undefined)
-      expect((await ui.find({ type: 'Text', text: 'cache-tax' }))?.text).toMatch(/unknown.*waiting for the first turn/)
+      expect((await ui.find({ type: 'Text', text: 'cache-watch' }))?.text).toMatch(/unknown.*waiting for the first turn/)
       await $.turn.complete(turn())
       expect((await ui.find({ type: 'Text', text: /^(warm|cold|unknown|stopped)$/ }))?.props.color).toBe('success')
-      expect((await ui.find({ type: 'Text', text: 'cache-tax' }))?.text).toMatch(/warm.*ping in 1h30m/)
+      expect((await ui.find({ type: 'Text', text: 'cache-watch' }))?.text).toMatch(/warm.*ping in 1h30m/)
       await clock.advance(HOUR)
       expect((await ui.find({ type: 'Text', text: /^(warm|cold|unknown|stopped)$/ }))?.props.color).toBe('#d97757')
-      expect((await ui.find({ type: 'Text', text: 'cache-tax' }))?.text).toMatch(/cold.*cold now/)
-      expect((await $.command.run(run('cache-tax', ''))).text).toMatch(/state       COLD/)
+      expect((await ui.find({ type: 'Text', text: 'cache-watch' }))?.text).toMatch(/cold.*cold now/)
+      expect((await $.command.run(run('cache-watch', ''))).text).toMatch(/state       COLD/)
       expect(w.forks.length).toBe(0)
       expect((await ui.find({ text: /^other mod$/ }))?.text).toBe('other mod')
       await $.turn.complete(turn())
       expect((await ui.find({ type: 'Text', text: /^(warm|cold|unknown|stopped)$/ }))?.props.color).toBe('success')
-      expect((await $.command.run(run('cache-tax', ''))).text).toMatch(/state       warm/)
+      expect((await $.command.run(run('cache-watch', ''))).text).toMatch(/state       warm/)
       expect(w.status.filter(Boolean)).toEqual([])
       await $.command.run(run('keepwarm', 'off'))
-      expect(await ui.find({ text: 'cache-tax' })).toBe(undefined)
+      // cache-watch: with keepwarm off the row stays, showing the cache clock.
+      expect((await ui.find({ type: 'Text', text: 'cache-watch' }))?.text).toMatch(/warm.*goes cold in 1h00m/)
       expect(w.forks.length).toBe(0)
     })
   }
@@ -199,34 +202,34 @@ describe('cache indicator', () => {
     const clock = mock.clock(on, { now: 10 * HOUR })
     const w = world(on, [], { store: new Map([['deadline:S1', 13 * HOUR]]) })
     await $.session.start({ ...session, surface: 'terminal', isInteractive: true })
-    const ui = await $.ui.mount({ plugin: 'cache-tax', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
     await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 7200, context_tokens: 200000, prompt_cache_likely_expired: true })
     expect((await ui.find({ type: 'Text', text: /^(warm|cold|unknown|stopped)$/ }))?.props.color).toBe('#d97757')
     await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'summary', toolUses: [] }] })
     expect((await ui.find({ type: 'Text', text: /^(warm|cold|unknown|stopped)$/ }))?.props.color).toBe(undefined)
-    expect((await ui.find({ type: 'Text', text: 'cache-tax' }))?.text).toMatch(/unknown.*after compaction/)
+    expect((await ui.find({ type: 'Text', text: 'cache-watch' }))?.text).toMatch(/unknown.*after compaction/)
     await clock.advance(HOUR)
     expect(w.forks.length).toBe(0)
     await $.turn.complete(turn())
     expect((await ui.find({ type: 'Text', text: /^(warm|cold|unknown|stopped)$/ }))?.props.color).toBe('success')
     await $.classic.SessionStart({ source: 'clear' })
-    expect(await ui.find({ text: 'cache-tax' })).toBe(undefined)
+    expect(await ui.find({ text: 'cache-watch' })).toBe(undefined)
     await clock.advance(HOUR)
     expect(w.forks.length).toBe(0)
   })
 
-  test('window expiry removes the row and surveys retain their band', async ($, on) => {
+  test('window expiry hands the row to the cache clock and surveys retain their band', async ($, on) => {
     const clock = mock.clock(on, { now: START })
     const w = world(on, [], { bandText: 'survey' })
     await $.session.start({ ...session, surface: 'terminal', isInteractive: true })
     await $.turn.complete(turn())
     await $.command.run(run('keepwarm', '10m'))
-    const ui = await $.ui.mount({ plugin: 'cache-tax', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
-    const survey = await $.ui.mount({ plugin: 'cache-tax', surface: 'terminal', component: 'AbovePrompt', props: { ...bandProps, hasSurvey: true } })
-    expect(await survey.find({ text: 'cache-tax' })).toBe(undefined)
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
+    const survey = await $.ui.mount({ plugin: 'cache-watch', surface: 'terminal', component: 'AbovePrompt', props: { ...bandProps, hasSurvey: true } })
+    expect(await survey.find({ text: 'cache-watch' })).toBe(undefined)
     expect((await survey.find({ text: 'survey' }))?.text).toBe('survey')
     await clock.advance(10 * MIN)
-    expect(await ui.find({ text: 'cache-tax' })).toBe(undefined)
+    expect((await ui.find({ type: 'Text', text: 'cache-watch' }))?.text).toMatch(/warm.*goes cold in 50m/)
     expect(w.forks.length).toBe(0)
   })
 
@@ -235,7 +238,7 @@ describe('cache indicator', () => {
     const w = world(on, [], { store: new Map<string, unknown>([['deadline:S1', 13 * HOUR], ['every:S1', 90 * MIN]]) })
     await $.session.start({ ...session, surface: 'terminal', isInteractive: true })
     await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 30 * 60, context_tokens: 200000 })
-    const ui = await $.ui.mount({ plugin: 'cache-tax', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
     expect((await ui.find({ type: 'Text', text: /^(warm|cold|unknown|stopped)$/ }))?.props.color).toBe('success')
     await $.turn.complete(turn({ agentId: 'worker' }))
     await $.session.compact({ trigger: 'manual', agentId: 'worker', messages: [{ role: 'user', text: 'summary', toolUses: [] }] })
@@ -251,7 +254,7 @@ describe('cache indicator', () => {
       await $.session.start({ ...session, surface })
       await $.turn.complete(turn())
       await $.command.run(run('keepwarm', '90m'))
-      expect(w.status.at(-1)).toBe('keepwarm 1h30m left · ping in 50m')
+      expect(w.status.at(-1)).toBe('keepwarm 1h30m left · ping in 55m')
       expect(w.status.at(-1)).not.toMatch(/\x1b/)
       expect(w.forks.length).toBe(0)
     })
@@ -263,13 +266,13 @@ describe('cache indicator', () => {
     await $.session.start({ ...session, surface: 'terminal', isInteractive: true })
     await $.turn.complete(turn())
     await $.command.run(run('keepwarm', '3h'))
-    const ui = await $.ui.mount({ plugin: 'cache-tax', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
-    await clock.advance(50 * MIN)
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
+    await clock.advance(55 * MIN)
     expect((await ui.find({ type: 'Text', text: /^(warm|cold|unknown|stopped)$/ }))?.props.color).toBe('success')
-    expect((await ui.find({ type: 'Text', text: 'cache-tax' }))?.text).toMatch(/last ping read 200k/)
-    await clock.advance(50 * MIN)
+    expect((await ui.find({ type: 'Text', text: 'cache-watch' }))?.text).toMatch(/last ping read 200k/)
+    await clock.advance(55 * MIN)
     expect((await ui.find({ type: 'Text', text: /^(warm|cold|unknown|stopped)$/ }))?.props.color).toBe(undefined)
-    expect((await ui.find({ type: 'Text', text: 'cache-tax' }))?.text).toMatch(/stopped.*cache was already gone/)
+    expect((await ui.find({ type: 'Text', text: 'cache-watch' }))?.text).toMatch(/stopped.*cache was already gone/)
     await clock.advance(HOUR)
     expect(w.forks.length).toBe(2)
   })
@@ -286,10 +289,10 @@ describe('cache indicator', () => {
       await $.session.start({ ...session, surface: 'terminal', isInteractive: true })
       await $.turn.complete(turn())
       await $.command.run(run('keepwarm', '3h every 1m'))
-      const ui = await $.ui.mount({ plugin: 'cache-tax', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
+      const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
       await clock.advance(MIN)
       expect((await ui.find({ type: 'Text', text: /^(warm|cold|unknown|stopped)$/ }))?.props.color).toBe(undefined)
-      expect((await ui.find({ type: 'Text', text: 'cache-tax' }))?.text).toMatch(/stopped/)
+      expect((await ui.find({ type: 'Text', text: 'cache-watch' }))?.text).toMatch(/stopped/)
       await clock.advance(2 * HOUR)
       expect(w.forks.length).toBe(1)
     })
@@ -316,7 +319,7 @@ describe('guard', () => {
     await $.turn.complete(turn())
     await clock.advance(3 * HOUR)
     const first = await $.prompt.submit(prompt('hi'))
-    expect(first.drop).toMatch(/cache-tax: the prompt cache went cold 2h00m ago\. Sending this re-writes up to 200,502 tokens at \$20\/MTok = \$4\.01/)
+    expect(first.drop).toMatch(/cache-watch: the prompt cache went cold 2h00m ago\. Sending this re-writes up to 200,502 tokens at \$20\/MTok = \$4\.01/)
     expect(w.entered).toEqual([])
     const second = await $.prompt.submit(prompt('hi'))
     expect(second.drop).toBe(undefined)
@@ -342,7 +345,7 @@ describe('guard', () => {
     const clock = mock.clock(on, { now: START })
     const w = world(on, [])
     await $.session.start(session)
-    const r = await $.command.run(run('cache-tax', 'guard warn'))
+    const r = await $.command.run(run('cache-watch', 'guard warn'))
     expect(r.text).toMatch(/guard set to warn/)
     await $.turn.complete(turn())
     await clock.advance(3 * HOUR)
@@ -361,12 +364,12 @@ describe('guard', () => {
     await $.prompt.submit(prompt('hi'))
     await $.turn.complete(turn({ usage: usage({ cache_read_input_tokens: 0, cache_creation_input_tokens: 200502 }) }))
     expect(w.logs.at(-1)).toMatch(/cold write of 201k tokens paid \(\$4\.01\)\. Keeping the cache warm for 3h00m/)
-    expect(w.status.at(-1)).toMatch(/^keepwarm 3h00m left · ping in 50m/)
-    await clock.advance(50 * MIN)
+    expect(w.status.at(-1)).toMatch(/^keepwarm 3h00m left · ping in 55m/)
+    await clock.advance(55 * MIN)
     expect(w.forks.length).toBe(1)
-    const card = await $.command.run(run('cache-tax', 'status'))
+    const card = await $.command.run(run('cache-watch', 'status'))
     expect(card.text).toMatch(/session     1 cold write paid, \$4\.01/)
-    expect(card.text).toMatch(/keepwarm    on, 2h10m left/)
+    expect(card.text).toMatch(/keepwarm    on, 2h05m left/)
   })
 
   test('context comes from the live window, not the turn\'s summed usage', async ($, on) => {
@@ -377,10 +380,11 @@ describe('guard', () => {
     await $.turn.complete(turn())
     live.tokens = 100000
     await $.turn.complete(turn({ usage: usage({ cache_read_input_tokens: 500000, cache_creation_input_tokens: 2000 }) }))
-    const card = await $.command.run(run('cache-tax', 'status'))
+    const card = await $.command.run(run('cache-watch', 'status'))
     expect(card.text).toMatch(/context     100,000 tokens/)
     expect(card.text).toMatch(/0 cold writes paid/)
-    expect(w.status.at(-1)).toBe(undefined)
+    // cache-watch: with keepwarm off, the status entry shows the cache clock.
+    expect(w.status.at(-1)).toMatch(/^goes cold in/)
   })
 
   test('/clear forgets the context, the clock and the tally', async () => {
@@ -406,7 +410,7 @@ describe('guard', () => {
     await $.session.start(session)
     await $.turn.complete(turn())
     await $.turn.complete(turn({ usage: usage({ cache_read_input_tokens: 0, cache_creation_input_tokens: 200502 }) }))
-    const card = await $.command.run(run('cache-tax', 'status'))
+    const card = await $.command.run(run('cache-watch', 'status'))
     expect(card.text).toMatch(/1 cold write paid/)
     expect(w.status.at(-1)).toMatch(/^keepwarm 3h00m left/)
   })
@@ -420,7 +424,7 @@ describe('guard', () => {
     await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'old', toolUses: [] }] })
     await $.prompt.submit(prompt('after compact'))
     expect(w.entered).toEqual(['after compact'])
-    const card = await $.command.run(run('cache-tax', 'status'))
+    const card = await $.command.run(run('cache-watch', 'status'))
     expect(card.text).toMatch(/reset by compaction/)
   })
 
@@ -444,19 +448,19 @@ describe('guard', () => {
 })
 
 describe('keepwarm', () => {
-  test('pings 50 minutes after the last request, then again, and reports the read', async ($, on) => {
+  test('pings 55 minutes after the last request, then again, and reports the read', async ($, on) => {
     const clock = mock.clock(on, { now: START })
     const w = world(on, [warm, warm])
     await $.session.start(session)
     const r = await $.command.run(run('keepwarm', '6h'))
     expect(r.text).toMatch(/keepwarm on for 6h00m/)
     await $.turn.complete(turn())
-    await clock.advance(49 * MIN)
+    await clock.advance(54 * MIN)
     expect(w.forks.length).toBe(0)
     await clock.advance(1 * MIN)
     expect(w.forks.length).toBe(1)
-    expect(w.status.at(-1)).toMatch(/keepwarm 5h10m left · ping in 50m · last ping read 200k \$0\.05/)
-    await clock.advance(50 * MIN)
+    expect(w.status.at(-1)).toMatch(/keepwarm 5h05m left · ping in 55m · last ping read 200k \$0\.05/)
+    await clock.advance(55 * MIN)
     expect(w.forks.length).toBe(2)
   })
 
@@ -470,7 +474,7 @@ describe('keepwarm', () => {
     await $.turn.complete(turn())
     await clock.advance(40 * MIN)
     expect(w.forks.length).toBe(0)
-    await clock.advance(10 * MIN)
+    await clock.advance(15 * MIN)
     expect(w.forks.length).toBe(1)
   })
 
@@ -480,7 +484,7 @@ describe('keepwarm', () => {
     await $.session.start(session)
     await $.command.run(run('keepwarm', '6h'))
     await $.turn.complete(turn())
-    await clock.advance(50 * MIN)
+    await clock.advance(55 * MIN)
     expect(w.forks.length).toBe(1)
     expect(w.status.at(-1)).toMatch(/keepwarm stopped: the ping read 0 and wrote 180k tokens \(\$3\.60\)/)
     await clock.advance(120 * MIN)
@@ -495,7 +499,7 @@ describe('keepwarm', () => {
     await $.session.start(session)
     await $.command.run(run('keepwarm', '1h'))
     await $.turn.complete(turn())
-    await clock.advance(50 * MIN)
+    await clock.advance(55 * MIN)
     expect(w.forks.length).toBe(1)
     expect(w.status.at(-1)).toMatch(/either the snapshot was cold or the API call failed/)
   })
@@ -511,7 +515,8 @@ describe('keepwarm', () => {
     expect(w.forks.length).toBe(1)
     await clock.advance(5 * MIN)
     expect(w.forks.length).toBe(2)
-    expect(w.status.at(-1)).toBe(undefined)
+    // cache-watch: with keepwarm off, the status entry shows the cache clock.
+    expect(w.status.at(-1)).toMatch(/^(goes cold in|cold for) /)
     expect(store.has('every:S1')).toBe(false)
     expect(store.has('deadline:S1')).toBe(false)
     await $.command.run(run('keepwarm', '6h'))
@@ -552,10 +557,10 @@ describe('keepwarm', () => {
     const w = world(on, [warm])
     await $.session.start(session)
     const r = await $.command.run(run('keepwarm', ''))
-    expect(r.text).toMatch(/^keepwarm on for 6h00m, a ping 50m after each idle stretch/)
+    expect(r.text).toMatch(/^keepwarm on for 6h00m, a ping 55m after each idle stretch/)
     await $.turn.complete(turn())
-    expect(w.status.at(-1)).toBe('keepwarm 6h00m left · ping in 50m')
-    await clock.advance(50 * MIN)
+    expect(w.status.at(-1)).toBe('keepwarm 6h00m left · ping in 55m')
+    await clock.advance(55 * MIN)
     expect(w.forks.length).toBe(1)
   })
 
@@ -570,14 +575,15 @@ describe('keepwarm', () => {
     await $.turn.complete(turn())
     await clock.advance(1 * MIN)
     expect(w.forks.length).toBe(0)
-    await clock.advance(49 * MIN)
+    await clock.advance(54 * MIN)
     expect(w.forks.length).toBe(1)
-    const card = await $.command.run(run('cache-tax', ''))
-    expect(card.text).toMatch(/keepwarm    on, 5h10m left · ping in 50m · last ping read 200k \$0\.05 \(always\)/)
+    const card = await $.command.run(run('cache-watch', ''))
+    expect(card.text).toMatch(/keepwarm    on, 5h05m left · ping in 55m · last ping read 200k \$0\.05 \(always\)/)
     const off = await $.command.run(run('keepwarm', 'off'))
     expect(off.text).toBe('keepwarm is off, and no longer arms itself at session start')
     expect(store.has('always')).toBe(false)
-    expect(w.status.at(-1)).toBe(undefined)
+    // cache-watch: with keepwarm off, the status entry shows the cache clock.
+    expect(w.status.at(-1)).toMatch(/^(goes cold in|cold for) /)
   })
 
   test('/keepwarm always sets the switch and arms now', async ($, on) => {
@@ -598,11 +604,11 @@ describe('keepwarm', () => {
     await $.session.start(session)
     await $.command.run(run('keepwarm', '6h'))
     await $.turn.complete(turn({ usage: usage({ model: 'claude-sonnet-5' }) }))
-    await clock.advance(50 * MIN)
-    expect(w.status.at(-1)).toBe('keepwarm 5h10m left · ping in 50m · last ping read 200k $0.05')
-    const card = await $.command.run(run('cache-tax', ''))
+    await clock.advance(55 * MIN)
+    expect(w.status.at(-1)).toBe('keepwarm 5h05m left · ping in 55m · last ping read 200k $0.05')
+    const card = await $.command.run(run('cache-watch', ''))
     expect(card.text).toMatch(/cold cost   \$0\.80 to re-write it \(warm turn \$0\.04\)/)
-    expect(card.text).toMatch(/break-even  up to 20 pings at the read rate cost one cold write, about 16h40m of idle at one ping per 50m/)
+    expect(card.text).toMatch(/break-even  up to 20 pings at the read rate cost one cold write, about 18h20m of idle at one ping per 55m/)
   })
 
   test('a partial write, a zero read, or a full write stops the loop; a ping\'s own few tokens do not', async ($, on) => {
@@ -627,7 +633,7 @@ describe('keepwarm', () => {
     await $.session.start(session)
     await $.command.run(run('keepwarm', '6h'))
     await $.turn.complete(turn())
-    await clock.advance(50 * MIN)
+    await clock.advance(55 * MIN)
     expect(w.status.at(-1)).toMatch(/^keepwarm stopped: the ping read 0 and wrote 0 tokens/)
     await clock.advance(60 * MIN)
     expect(w.forks.length).toBe(1)
@@ -639,8 +645,8 @@ describe('keepwarm', () => {
     await $.session.start(session)
     await $.command.run(run('keepwarm', '6h'))
     await $.turn.complete(turn({ usage: usage({ model: 'claude-sonnet-5' }) }))
-    await clock.advance(50 * MIN)
-    expect(w.status.at(-1)).toBe('keepwarm 5h10m left · ping in 50m · last ping read 200k $0.15')
+    await clock.advance(55 * MIN)
+    expect(w.status.at(-1)).toBe('keepwarm 5h05m left · ping in 55m · last ping read 200k $0.15')
   })
 
   test('the card states the break-even for Fable 5.1', async ($, on) => {
@@ -648,8 +654,8 @@ describe('keepwarm', () => {
     world(on, [])
     await $.session.start(session)
     await $.turn.complete(turn())
-    const card = await $.command.run(run('cache-tax', ''))
-    expect(card.text).toMatch(/break-even  up to 80 pings at the read rate cost one cold write, about 2d 18h of idle at one ping per 50m/)
+    const card = await $.command.run(run('cache-watch', ''))
+    expect(card.text).toMatch(/break-even  up to 80 pings at the read rate cost one cold write, about 3d 1h of idle at one ping per 55m/)
   })
 
   test('/keepwarm on a cold session schedules no fork before a turn, and does after one', async ($, on) => {
@@ -659,17 +665,17 @@ describe('keepwarm', () => {
     await $.turn.complete(turn())
     await clock.advance(15 * 24 * HOUR)
     const r = await $.command.run(run('keepwarm', ''))
-    expect(r.text).toBe('keepwarm on for 6h00m. The cache is cold now, so the first ping comes 50m after the next turn')
-    expect(w.status.at(-1)).toBe('keepwarm 6h00m left · cold now, first ping 50m after the next turn')
+    expect(r.text).toBe('keepwarm on for 6h00m. The cache is cold now, so the first ping comes 55m after the next turn')
+    expect(w.status.at(-1)).toBe('keepwarm 6h00m left · cold now, first ping 55m after the next turn')
     await clock.advance(1 * MIN)
     expect(w.forks.length).toBe(0)
     await clock.advance(60 * MIN)
     expect(w.forks.length).toBe(0)
-    const card = await $.command.run(run('cache-tax', ''))
-    expect(card.text).toMatch(/keepwarm    on, 4h59m left · cold now, first ping 50m after the next turn/)
+    const card = await $.command.run(run('cache-watch', ''))
+    expect(card.text).toMatch(/keepwarm    on, 4h59m left · cold now, first ping 55m after the next turn/)
     await $.turn.complete(turn())
-    expect(w.status.at(-1)).toBe('keepwarm 4h59m left · ping in 50m')
-    await clock.advance(49 * MIN)
+    expect(w.status.at(-1)).toBe('keepwarm 4h59m left · ping in 55m')
+    await clock.advance(54 * MIN)
     expect(w.forks.length).toBe(0)
     await clock.advance(1 * MIN)
     expect(w.forks.length).toBe(1)
@@ -686,15 +692,15 @@ describe('keepwarm', () => {
     // The test kit cannot raise classic.SessionStart, so the cold state comes from the turn above and a second start arms the switch over it.
     store.set('always', true)
     await $.session.start(session)
-    expect(w.status.at(-1)).toBe('keepwarm 6h00m left · cold now, first ping 50m after the next turn')
+    expect(w.status.at(-1)).toBe('keepwarm 6h00m left · cold now, first ping 55m after the next turn')
     await clock.advance(1 * MIN)
     expect(w.forks.length).toBe(0)
     const r = await $.command.run(run('keepwarm', 'always'))
-    expect(r.text).toBe('keepwarm always on: every session starts with a 6h00m window; /keepwarm off turns it off for good. The cache is cold now, so the first ping comes 50m after the next turn')
+    expect(r.text).toBe('keepwarm always on: every session starts with a 6h00m window; /keepwarm off turns it off for good. The cache is cold now, so the first ping comes 55m after the next turn')
     await clock.advance(60 * MIN)
     expect(w.forks.length).toBe(0)
     await $.turn.complete(turn())
-    await clock.advance(50 * MIN)
+    await clock.advance(55 * MIN)
     expect(w.forks.length).toBe(1)
   })
 
@@ -710,10 +716,11 @@ describe('keepwarm', () => {
     expect(w.forks.length).toBe(0)
     expect(store.has('deadline:S1')).toBe(false)
     expect(store.has('every:S1')).toBe(false)
-    expect(w.status.at(-1)).toBe(undefined)
+    // cache-watch: with keepwarm off, the status entry shows the cache clock.
+    expect(w.status.at(-1)).toMatch(/^(goes cold in|cold for) /)
     expect((await $.command.run(run('keepwarm', 'status'))).text).toBe('keepwarm is off')
     await $.turn.complete(turn({ usage: usage({ cache_read_input_tokens: 0, cache_creation_input_tokens: 200000 }) }))
-    await clock.advance(49 * MIN)
+    await clock.advance(54 * MIN)
     expect(w.forks.length).toBe(0)
     await clock.advance(MIN)
     expect(w.forks.length).toBe(1)
@@ -734,7 +741,7 @@ describe('keepwarm', () => {
     await $.turn.complete(turn({ usage: usage({ cache_read_input_tokens: 0, cache_creation_input_tokens: 200000 }) }))
     expect(store.has('every:S1')).toBe(false)
     expect(store.get('deadline:S1')).toBe(now + 3 * HOUR)
-    expect(w.status.at(-1)).toBe('keepwarm 3h00m left · ping in 50m')
+    expect(w.status.at(-1)).toBe('keepwarm 3h00m left · ping in 55m')
     expect(w.forks.length).toBe(0)
   })
 
@@ -746,7 +753,7 @@ describe('keepwarm', () => {
     await $.turn.complete(turn())
     await clock.advance(40 * MIN)
     await $.turn.complete(turn({ agentId: 'a1' }))
-    await clock.advance(10 * MIN)
+    await clock.advance(15 * MIN)
     expect(w.forks.length).toBe(1)
   })
 })
@@ -761,7 +768,7 @@ describe('store per session', () => {
     const r = await $.command.run(run('keepwarm', 'status'))
     expect(r.text).toBe('keepwarm is off')
     await $.turn.complete(turn())
-    await clock.advance(50 * MIN)
+    await clock.advance(55 * MIN)
     expect(w.forks.length).toBe(0)
     expect(store.get('deadline:other')).toBe(START + HOUR)
     expect(store.get('every:other')).toBe(MIN)
@@ -824,5 +831,331 @@ describe('store per session', () => {
     world(on, [], { store, sid: 'mine' })
     await $.session.start(session)
     expect([...store.keys()]).toEqual(['deadline:other', 'every:other'])
+  })
+})
+
+describe('hold card', () => {
+  const ask = 'Where were we? Give me a 2 line recap.'
+  const isHeld = async (ui: { find: (q: { text: RegExp }) => Promise<unknown> }) => (await ui.find({ text: /Your message is on hold/ })) !== undefined
+  // A band with room for the full card; bandProps (10 rows) gets the compact one.
+  const tallBand = { ...bandProps, maxRows: 40 }
+
+  test('a short band gets the compact card, with text bars and the buttons in view', async ($, on) => {
+    const clock = mock.clock(on, { now: START })
+    world(on, [])
+    await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
+    await $.turn.complete(turn())
+    await clock.advance(3 * HOUR)
+    await $.prompt.submit(prompt(ask))
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'AbovePrompt', props: bandProps })
+    expect(await ui.find({ text: /CACHE WATCH · Your message is on hold · cold for 2h00m/ })).toBeTruthy()
+    // Desktop Text is proportional: the bars are one short Svg, never block glyphs in Text.
+    const svgs = await ui.findAll({ type: 'Svg' })
+    expect(svgs.map(el => String(el.props.alt))).toEqual(['Send it now: $4.01, re-writes up to 200,502 tokens at $20/MTok. A warm turn: $0.05, what it would have cost.'])
+    expect(svgs[0]?.props.height).toBe(44)
+    expect(await ui.find({ text: /█|░/ })).toBe(undefined)
+    expect(await ui.find({ key: 'pay' })).toBeTruthy()
+  })
+
+  test('/cache-watch pay and /cache-watch fresh do what the buttons do', async ($, on) => {
+    const clock = mock.clock(on, { now: START })
+    const w = world(on, [])
+    const filled: string[] = []
+    on('command.run', { command: 'clear' }, () => ({ text: '' }))
+    on('prompt.fill', ($, e) => { filled.push(e.text); return { isFilled: true } })
+    await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
+    expect((await $.command.run(run('cache-watch', 'pay'))).text).toBe('cache-watch: no message is on hold')
+    await $.turn.complete(turn())
+    await clock.advance(3 * HOUR)
+    await $.prompt.submit(prompt(ask))
+    expect((await $.command.run(run('cache-watch', 'pay'))).text).toMatch(/held message is sent/)
+    await clock.advance(1)
+    expect(w.entered).toEqual([ask])
+    await $.turn.complete(turn())
+    await clock.advance(3 * HOUR)
+    await $.prompt.submit(prompt('second'))
+    expect((await $.command.run(run('cache-watch', 'fresh'))).text).toMatch(/started fresh/)
+    await clock.advance(1)
+    expect(filled).toEqual(['second'])
+  })
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    test(`${surface}: a cold send waits on the card, and Pay and send resends it as the person's words and scores the write`, async ($, on) => {
+      const clock = mock.clock(on, { now: START })
+      const w = world(on, [])
+      await $.session.start({ ...session, surface, isInteractive: true })
+      await $.turn.complete(turn())
+      await clock.advance(3 * HOUR)
+      const first = await $.prompt.submit(prompt(ask))
+      expect(first.drop).toBe(HELD_DROP)
+      expect(w.entered).toEqual([])
+      const ui = await $.ui.mount({ plugin: 'cache-watch', surface, component: 'AbovePrompt', props: tallBand })
+      expect(await isHeld(ui)).toBe(true)
+      expect(await ui.find({ text: /CACHE WATCH/ })).toBeTruthy()
+      expect(await ui.find({ text: /The prompt cache went cold 2h00m ago\./ })).toBeTruthy()
+      expect(await ui.find({ text: /On hold: “Where were we\? Give me a 2 line recap\.”/ })).toBeTruthy()
+      expect(await ui.find({ text: /keepwarm then holds the cache for 3h00m/ })).toBeTruthy()
+      if (surface === 'desktop') {
+        const alts = (await ui.findAll({ type: 'Svg' })).map(el => String(el.props.alt))
+        expect(alts).toContain('Send it now: $4.01, re-writes up to 200,502 tokens at $20/MTok. A warm turn: $0.05, what it would have cost.')
+      } else {
+        expect(await ui.find({ text: /re-writes up to 200,502 tokens at \$20\/MTok/ })).toBeTruthy()
+        expect(await ui.find({ text: /\$4\.01/ })).toBeTruthy()
+      }
+      expect((await ui.find({ key: 'pay' }))?.props.variant).toBe('primary')
+      await ui.press({ key: 'pay' })
+      expect(w.entered).toEqual([ask])
+      expect(await isHeld(ui)).toBe(false)
+      await $.turn.complete(turn({ usage: usage({ cache_read_input_tokens: 0, cache_creation_input_tokens: 200000 }) }))
+      // The paid write shows as a pill in the band, not a log line.
+      expect(await ui.find({ text: /Cold write paid: \$4\.00 for 200k tokens\. Keepwarm holds the cache for 3h00m\./ })).toBeTruthy()
+      expect(w.logs.some(line => /cold write of/.test(line))).toBe(false)
+      await $.prompt.submit(prompt('next'))
+      expect(await ui.find({ key: 'receipt' })).toBe(undefined)
+    })
+  }
+
+  test('Start fresh clears the conversation and puts the message back in the box', async ($, on) => {
+    const clock = mock.clock(on, { now: START })
+    const w = world(on, [])
+    const commands: string[] = []
+    const filled: string[] = []
+    on('command.run', { command: 'clear' }, ($, e) => { commands.push(e.command); return { text: '' } })
+    on('prompt.fill', ($, e) => { filled.push(e.text); return { isFilled: true } })
+    await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
+    await $.turn.complete(turn())
+    await clock.advance(3 * HOUR)
+    await $.prompt.submit(prompt(ask))
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'AbovePrompt', props: tallBand })
+    await ui.press({ key: 'fresh' })
+    expect(commands).toEqual(['clear'])
+    expect(filled).toEqual([ask])
+    expect(w.entered).toEqual([])
+    expect(await isHeld(ui)).toBe(false)
+  })
+
+  test('Show cache status opens the details inside the card and closes them again', async ($, on) => {
+    const clock = mock.clock(on, { now: START })
+    world(on, [])
+    await $.session.start({ ...session, surface: 'terminal', isInteractive: true })
+    await $.turn.complete(turn())
+    await clock.advance(3 * HOUR)
+    await $.prompt.submit(prompt(ask))
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'terminal', component: 'AbovePrompt', props: tallBand })
+    expect(await ui.find({ key: 'status-card' })).toBe(undefined)
+    await ui.press({ key: 'status' })
+    expect(String((await ui.find({ key: 'status-card' }))?.props.text)).toMatch(/state\s+COLD/)
+    expect((await ui.find({ key: 'status' }))?.props.label).toBe('Hide cache status')
+    await ui.press({ key: 'status' })
+    expect(await ui.find({ key: 'status-card' })).toBe(undefined)
+    expect(await isHeld(ui)).toBe(true)
+  })
+
+  test('sending again still pays, and clears the card', async ($, on) => {
+    const clock = mock.clock(on, { now: START })
+    const w = world(on, [])
+    await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
+    await $.turn.complete(turn())
+    await clock.advance(3 * HOUR)
+    await $.prompt.submit(prompt('hi'))
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'AbovePrompt', props: tallBand })
+    expect(await isHeld(ui)).toBe(true)
+    const second = await $.prompt.submit(prompt('hi'))
+    expect(second.drop).toBe(undefined)
+    expect(w.entered).toEqual(['hi'])
+    expect(await isHeld(ui)).toBe(false)
+  })
+
+  for (const [label, sent] of [['an @file mention', prompt('look at @README.md')], ['a pasted image', { ...prompt('what is this?'), attachments: [{ type: 'image' as const }] }]] as const) {
+    test(`a message with ${label} goes through with the price, since no card can resend it`, async ($, on) => {
+      const clock = mock.clock(on, { now: START })
+      const w = world(on, [])
+      await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
+      await $.turn.complete(turn())
+      await clock.advance(3 * HOUR)
+      const first = await $.prompt.submit(sent)
+      expect(first.drop).toBe(undefined)
+      expect(w.entered).toEqual([sent.text])
+      expect(w.logs).toEqual([])
+      const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'AbovePrompt', props: tallBand })
+      expect(await isHeld(ui)).toBe(false)
+      await $.turn.complete(turn({ usage: usage({ cache_read_input_tokens: 0, cache_creation_input_tokens: 200000 }) }))
+      expect(await ui.find({ text: /Cold write paid: \$4\.00 for 200k tokens/ })).toBeTruthy()
+      expect(await ui.find({ text: /Not held: a message with images or an @file mention can't wait on the card\./ })).toBeTruthy()
+    })
+  }
+
+  test('a desktop host that attaches after session.start gets the band, not the status entry', async ($, on) => {
+    const clock = mock.clock(on, { now: START })
+    const w = world(on, [])
+    on('session.surfaces', () => ({ value: [] }))
+    on('session.attach', ($, e) => ({ clientId: e.clientId }))
+    await $.session.start(session)
+    await $.turn.complete(turn())
+    expect(w.status.at(-1)).toMatch(/^goes cold in/)
+    await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+    expect(w.status.at(-1)).toBe(undefined)
+    await clock.advance(3 * HOUR)
+    const first = await $.prompt.submit(prompt(ask))
+    expect(first.drop).toBe(HELD_DROP)
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'AbovePrompt', props: tallBand })
+    expect(await isHeld(ui)).toBe(true)
+  })
+
+  test('the first band drawn on a surface that never said it attached switches the band on', async ($, on) => {
+    mock.clock(on, { now: START })
+    const w = world(on, [])
+    on('session.surfaces', () => ({ value: [] }))
+    await $.session.start(session)
+    await $.turn.complete(turn())
+    expect(w.status.at(-1)).toMatch(/^goes cold in/)
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'AbovePrompt', props: tallBand })
+    expect((await ui.find({ type: 'Text', text: 'cache-watch' }))?.text).toMatch(/warm.*goes cold in 1h00m/)
+  })
+
+  test('/cache-watch preview shows the card with this session\'s numbers, and any button only closes it', async ($, on) => {
+    mock.clock(on, { now: START })
+    const w = world(on, [])
+    await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
+    await $.turn.complete(turn())
+    const r = await $.command.run(run('cache-watch', 'preview'))
+    expect(r.text).toMatch(/hold card is above the prompt box/)
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'AbovePrompt', props: tallBand })
+    expect(await isHeld(ui)).toBe(true)
+    expect(await ui.find({ text: /Preview: nothing is held/ })).toBeTruthy()
+    const alts = (await ui.findAll({ type: 'Svg' })).map(el => String(el.props.alt))
+    expect(alts.some(alt => alt.startsWith('Send it now: $4.01'))).toBe(true)
+    await ui.press({ key: 'pay' })
+    expect(w.entered).toEqual([])
+    expect(await isHeld(ui)).toBe(false)
+  })
+
+  test('the row shows the cache clock even with keepwarm off', async ($, on) => {
+    const clock = mock.clock(on, { now: START })
+    world(on, [])
+    await $.session.start({ ...session, surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'terminal', component: 'AbovePrompt', props: tallBand })
+    expect(await ui.find({ text: /goes cold in|cold for/ })).toBe(undefined)
+    await $.turn.complete(turn())
+    expect(await ui.find({ text: /cache-watch · warm · goes cold in 1h00m/ })).toBeTruthy()
+    await clock.advance(90 * MIN)
+    expect(await ui.find({ text: /cache-watch · cold · cold for 30m/ })).toBeTruthy()
+  })
+
+  test('helpers: hold rules, quoting, bar shares and the panel markup', async () => {
+    expect(canHold('plain words', undefined)).toBe(true)
+    expect(canHold('see @src/a.ts', undefined)).toBe(false)
+    expect(canHold('email me at a@b.com', undefined)).toBe(true)
+    expect(canHold('a picture', [{ type: 'image' }])).toBe(false)
+    expect(quoted('two\nlines  here')).toBe('two lines here')
+    expect(quoted('bell\u0007 zero​width \u001b[31mred\r\n')).toBe('bell zero width [31mred')
+    expect(quoted('x'.repeat(400)).length).toBe(160)
+    const h = { text: 'hi', tokens: 51929, rate: '$10/MTok', coldUsd: 0.52, warmUsd: 0.03 }
+    expect(Math.abs(warmShare(h) - 0.0577) < 0.001).toBe(true)
+    expect(warmShare({ ...h, warmUsd: null })).toBe(0.04)
+    expect(bar(1, 10)).toEqual(['██████████', ''])
+    expect(bar(0.01, 10)).toEqual(['█', '░░░░░░░░░'])
+    const svg = statsSvg(h, false)
+    expect(svg).toMatch(/^<svg /)
+    expect(svg).toContain('$0.52')
+    expect(svg).toContain('re-writes up to 51,929 tokens at $10/MTok')
+    expect(svg.length).toBeLessThan(131072)
+    expect(statsSvg({ ...h, rate: '<b>&' }, true)).toContain('at &lt;b&gt;&amp;</text>')
+    // The compact Svg drops its captions first when the band is narrow.
+    expect(compactStatsSvg(h, false, 680)).toContain('what it would have cost')
+    expect(compactStatsSvg(h, false, 400)).not.toContain('what it would have cost')
+    expect(compactStatsSvg(h, false, 400)).toContain('$0.52')
+  })
+})
+
+const footerProps: RenderPropsOf['SessionMode'] = { modes: ['focus'] }
+
+describe('footer label', () => {
+  test("desktop: coloured state beside the app's labels, short enough for the footer", async ($, on) => {
+    const clock = mock.clock(on, { now: 10 * HOUR })
+    world(on, [])
+    await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'SessionMode', props: footerProps })
+    // No request yet: nothing to say, so the app's labels draw alone.
+    expect(await ui.find({ type: 'Text', text: /^cache/ })).toBe(undefined)
+    expect((await ui.find({ text: /^modes & focus$/ }))?.text).toBe('modes & focus')
+    await $.turn.complete(turn())
+    expect((await ui.find({ type: 'Text', text: /^cache/ }))?.text).toBe('cache warm · 1h00m left')
+    expect((await ui.find({ type: 'Text', text: /^warm$/ }))?.props.color).toBe('success')
+    expect((await ui.find({ text: /^modes & focus$/ }))?.text).toBe('modes & focus')
+    // The Code tab drops an Svg in the footer, so none is sent.
+    expect(await ui.find({ type: 'Svg' })).toBe(undefined)
+    await clock.advance(HOUR + 6 * MIN)
+    // A cold cache redraws every 5 minutes, so the figure can trail the clock.
+    expect((await ui.find({ type: 'Text', text: /^cache/ }))?.text).toMatch(/^cache cold for [56]m$/)
+    expect((await ui.find({ type: 'Text', text: /^cold$/ }))?.props.color).toBe('#d97757')
+  })
+
+  test('keepwarm shows its time left, with no state until the first turn', async ($, on) => {
+    mock.clock(on, { now: 10 * HOUR })
+    world(on, [])
+    await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'SessionMode', props: footerProps })
+    await $.command.run(run('keepwarm', '3h every 90m'))
+    expect((await ui.find({ type: 'Text', text: /^cache/ }))?.text).toBe('cache · keepwarm 3h00m')
+    await $.turn.complete(turn())
+    expect((await ui.find({ type: 'Text', text: /^cache/ }))?.text).toBe('cache warm · 3h00m left')
+  })
+
+  test('every label fits in 24 characters, the longest windows and cold spells included', () => {
+    const now = 100 * HOUR
+    const texts: string[] = []
+    // An age of null is a session with no request yet.
+    for (const age of [null, 0, 59 * MIN, HOUR + 59 * MIN, 23 * HOUR + 59 * MIN]) {
+      for (const left of [0, 59 * MIN, 9 * HOUR + 59 * MIN]) {
+        for (const stopped of [null, 'the ping failed']) {
+          const s = { ...freshState(), lastRequestAt: age === null ? 0 : now - age, deadline: left ? now + left : 0, stopped }
+          const label = footerLabel(s, now)
+          if (label) texts.push(label.state ? `cache ${label.state}${label.sep}${label.detail}` : `cache${label.sep}${label.detail}`)
+        }
+      }
+    }
+    expect(texts).toContain('cache warm · 9h59m left')
+    expect(texts).toContain('cache warm · 1h00m left')
+    expect(texts).toContain('cache cold for 22h59m')
+    expect(texts).toContain('cache · keepwarm 9h59m')
+    expect(texts).toContain('cache · keepwarm stopped')
+    // A warm cache always says how long it has left; nothing says "cold in" any more.
+    expect(texts.filter(text => text.startsWith('cache warm') && !text.endsWith(' left'))).toEqual([])
+    expect(texts.filter(text => text.length > 24)).toEqual([])
+  })
+
+  test('the band drops its row once the footer draws, and footer off brings it back', async ($, on) => {
+    const clock = mock.clock(on, { now: 10 * HOUR })
+    const store = new Map<string, unknown>()
+    world(on, [], { store, bandText: 'other mod' })
+    await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
+    await $.turn.complete(turn())
+    const band = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'AbovePrompt', props: bandProps })
+    // Until the footer has drawn here, the row stays, so a build without the footer keeps its status.
+    expect((await band.find({ type: 'Text', text: 'cache-watch' }))?.text).toMatch(/warm.*goes cold in 1h00m/)
+    const footer = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'SessionMode', props: footerProps })
+    expect((await footer.find({ type: 'Text', text: /^cache/ }))?.text).toBe('cache warm · 1h00m left')
+    // The footer's first draw redraws the band on the next tick.
+    await clock.advance(1)
+    expect(await band.find({ type: 'Text', text: 'cache-watch' })).toBe(undefined)
+    expect((await band.find({ text: /^other mod$/ }))?.text).toBe('other mod')
+
+    expect((await $.command.run(run('cache-watch', 'footer off'))).text).toBe('cache-watch: the status is back in the band above the prompt.')
+    expect(store.get('footer')).toBe('off')
+    expect((await band.find({ type: 'Text', text: 'cache-watch' }))?.text).toMatch(/warm.*goes cold in 1h00m/)
+    expect(await footer.find({ type: 'Text', text: /^cache/ })).toBe(undefined)
+    expect((await footer.find({ text: /^modes & focus$/ }))?.text).toBe('modes & focus')
+
+    expect((await $.command.run(run('cache-watch', 'footer on'))).text).toMatch(/^cache-watch: the status shows in the prompt footer\. The footer has drawn \d+ times, last on desktop\.$/)
+    expect(await band.find({ type: 'Text', text: 'cache-watch' })).toBe(undefined)
+    expect((await $.command.run(run('cache-watch', 'footer loud'))).text).toBe('/cache-watch footer takes on or off')
+  })
+
+  test('footer off survives a new session', async ($, on) => {
+    mock.clock(on, { now: 10 * HOUR })
+    world(on, [], { store: new Map<string, unknown>([['footer', 'off']]) })
+    await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
+    expect((await $.command.run(run('cache-watch', 'footer'))).text).toBe('cache-watch: footer off. The footer has not drawn in this session yet, so the status stays in the band. /cache-watch footer on or off moves the status.')
   })
 })

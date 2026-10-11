@@ -1,167 +1,112 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="site/assets/cache-tax-dark.svg">
-  <img src="site/assets/cache-tax-light.svg" alt="Cache Tax" width="64" height="64">
-</picture>
+# cache-watch
 
-# Cache Tax for Claude Code
+A Claude Code mod that watches your prompt cache, so a message to an old conversation doesn't quietly cost you a full re-write.
 
-**Keep Claude Code's prompt cache warm during breaks.**
+It shows whether the cache is warm or cold in the prompt footer. When a send would re-write a cold cache, it holds the message and shows you the price first. And it can keep the cache warm while you're away. It's a fork of Karan Bansal's [cache-tax](https://github.com/karanb192/cache-tax), reworked for the Claude desktop app.
 
-Cache Tax is a Claude Code mod that refreshes your prompt cache while you step away and shows the estimated rewrite cost before a cold send. Run `/keepwarm 90m` before a break. Pings cost tokens; choose a window you expect to return within.
+![The prompt footer reading "cache warm · 54m left" in green, next to the model picker](docs/images/footer-warm.png)
 
-**[Install](#install)** · [Website](https://cachetax.aidojo.si/) · [How it works](#how-it-works) · [Costs and limits](#cost-and-the-plan-limit-question) · [Commands](#commands)
+The footer while the cache is warm: how long it has left before it goes cold.
 
-![Real recording of cache-tax stopping a cold send with a $6.61 estimate](site/assets/refusal.gif)
+![The prompt footer reading "cache cold for 5d 20h" in orange](docs/images/footer-cold.png)
 
-A two-line recap in a 330k-token session triggered a **$6.61 estimate**. After resending, the reported cache write was **$6.28**. Recorded on 2.1.1; current wording says “up to” the estimated token count. These are API-equivalent costs, not extra subscription charges.
+The same footer once the cache has gone cold.
+
+![The hold card above the prompt box: "Your message is on hold", Send it now $4.43 against A warm turn $0.22, the held message, and the Pay and send, Start fresh and Show cache status buttons](docs/images/hold-card.png)
+
+Sending to a 442k-token conversation that went cold days ago. The message waits on a card until you choose.
+
+## What it does
+
+- **Footer status.** The footer next to the model picker reads `cache warm · 54m left` or `cache cold for 6m`. Warm is green, cold is orange, and the word is always there, so colour is never the only signal.
+- **Hold card.** When the cache has gone cold and the conversation is big (50,000 tokens or more), your next message waits on a card above the prompt box. The card puts what sending now costs next to what a warm turn would have cost. Then you pick:
+  - **Pay and send** sends it as it is. cache-watch then keeps the cache warm for 3 hours, so you don't pay the re-write twice.
+  - **Start fresh** runs `/clear` and puts your message back in the prompt box for a new conversation. `/resume` still brings the old one back.
+  - **Show cache status** opens the status card inside the hold card.
+- **Keepwarm.** `/keepwarm` keeps the cache warm for 6 hours, with a cheap ping 55 minutes after your last request. [How it works](docs/how-it-works.md) explains what a ping is and what it costs.
+
+The only request cache-watch makes of its own is the keepwarm ping: a one-line question over your conversation, whose reply is thrown away and never shows in the chat. It keeps a few settings in Claude Code's plugin store on your machine, listed in [the reference](docs/commands.md#what-it-stores).
 
 ## Install
 
-Needs [Claude Code 2.1.287 or later](https://code.claude.com/docs/en/plugins/mods/overview#turn-mods-on-or-off), a one-hour cache and Claude Code left running. Mods are on by default. Pings cost tokens, including uncapped output.
+Mods install from a terminal. The desktop app's Code tab doesn't offer the `/plugin` command, so run these once in PowerShell, Terminal, or any shell where `claude` works:
 
-```sh
-claude plugin marketplace add karanb192/claude-code-mods
-claude plugin install cache-tax@claude-code-mods
+```bash
+claude plugin marketplace add Barncore/cache-watch
 ```
 
-Restart Claude Code or run `/reload-plugins` in an open session. No early-access flag is needed. If you set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` previously, remove it; current Claude Code ignores it.
+```bash
+claude plugin install cache-watch@cache-watch --scope user
+```
 
-In a warm session, run `/keepwarm` to arm six hours. Use `/keepwarm 90m` for a shorter window, or `/keepwarm off` to stop.
+Then restart the desktop app, or start a new `claude` session. In an interactive `claude` session you can do both steps in one line instead: `/plugin install cache-watch --marketplace Barncore/cache-watch`.
 
-**Check the main cache lifetime.** Included subscription usage defaults to one hour. API-key, usage-credit and cloud-provider sessions default to five minutes, so set [`promptCacheTtl`](https://code.claude.com/docs/en/prompt-caching#choose-the-ttl-yourself) to `"1h"` for those billing paths. A 50-minute timer cannot protect a five-minute main cache. See [Limits](#limits) for the fork evidence.
+If you also have cache-tax installed, turn it off, or every cold send gets guarded twice:
 
-**Prefer a settings hook?** The [hook version](https://github.com/karanb192/claude-code-hooks/tree/main/plugins/cache-tax) warns by default, refuses once with `CACHE_TAX_BLOCK=1`, and provides a standalone status-line countdown. Warming is part of this mod.
+```bash
+claude plugin disable cache-tax@claude-code-mods
+```
 
-## How it works
+To update later:
 
-**Before a break:** `/keepwarm` arms a bounded window. After 50 idle minutes, a timer inside Claude Code sends one tool-less fork over the session's transcript. It reads usage after every ping and stops if reads are zero or writes reach 10% of reads. There is no background transcript-polling loop.
+```bash
+claude plugin marketplace update cache-watch
+```
 
-**When you return cold:** for a context of at least 50,000 tokens, the guard drops your ordinary message once when its one-hour clock says cold. It shows the estimated rewrite price. Resend to continue, or `/clear` and start from a note.
+```bash
+claude plugin update cache-watch@cache-watch --scope user
+```
 
-A detected cold write automatically arms at least three hours of keepwarm. `/cache-tax` shows the current cache estimate, warming window and this session's cold-write tally.
+Then restart the app again. A running session keeps the copy it started with.
 
-Windows belong to individual sessions. An already-cold session waits for your next turn before pinging. A window ends at its deadline; `/keepwarm off` also cancels it and clears the always setting.
+### What it needs
 
-### A recorded warming ping
+- **Claude Code 2.1.287 or later.** That's the release mods arrived in. They're on by default, but local settings, safe mode or an organisation policy can turn them off. See [Anthropic's mod docs](https://code.claude.com/docs/en/plugins/mods/overview#turn-mods-on-or-off).
+- **A one-hour prompt cache.** A Claude subscription gets one by default. API-key, usage-credit and cloud-provider sessions default to five minutes, and no ping schedule can save a five-minute cache. On those, set [`promptCacheTtl`](https://code.claude.com/docs/en/prompt-caching#choose-the-ttl-yourself) to `"1h"`. (Credit to cache-tax's README for spelling this out.)
+- **Claude Code left running, for keepwarm.** Pings come from a timer inside Claude Code. A closed app or a sleeping PC sends none.
 
-![Real keepwarm status showing a 75k-token cache read at $0.02](site/assets/keepwarm-receipt.png)
+## Tested on
 
-Sonnet 5, 16 September 2026: the status reported **75k tokens read at $0.02**. Nothing appeared in the conversation during the live run. This capture used the one-minute testing interval on 2.0.0; its card's $0.45 rewrite estimate used an older Sonnet price row, versus $0.30 for the same context with the current row. The two-cent ping is a receipt for that session, not a fixed price.
-
-## Why a short message can cost so much
-
-When the cached prefix expires, even “give me a recap” can trigger a rewrite of the old context before the answer. Cache Tax's Fable 5.1 price row compares a $20 one-hour write with a $0.25 cache read per million tokens: 80x per token, not 80x total savings. See the [pricing assumptions](#cost-and-the-plan-limit-question) and [Anthropic's price table](https://platform.claude.com/docs/en/about-claude/pricing).
-
-[Watch the 23-second overview](docs/assets/cache-cost-explainer.mp4). Its designed scenes label Fable 5.1 list prices; every terminal and status-line pixel comes from the real refusal recording and keep-warm receipt above. The refusal was recorded on 2.1.1 and the keep-warm crop on 2.0.0.
-
-New to caching? [Anthropic explains how Claude Code uses it](https://code.claude.com/docs/en/prompt-caching).
+- **Windows 11, the Claude desktop app's Code tab, Claude Code 2.1.295.** This is the only setup cache-watch has been run on by a person looking at the screen.
+- **macOS: untested.** It should work. Mods are JavaScript run by Claude Code itself, and cache-watch touches no files, processes or OS features, so nothing in its code is Windows-specific. But the desktop app draws mods itself, and a few mod drawing bugs have only been reported on Mac. If you try it on a Mac, an issue saying how it went would really help.
+- **Terminal: covered by the tests, not watched live.** The tests draw the status row and the hold card for a terminal, but not the footer, and nobody has looked at any of it in a real terminal yet.
+- **The footer is the newest part.** It was checked on 2.1.295, and mod support changes fast between releases. If your build draws it oddly, `/cache-watch footer off` moves the status back above the prompt box.
 
 ## Commands
 
-    /keepwarm               keep warm for six hours
-    /keepwarm 90m           keep warm for a window of your own (also 2h30m, 6h)
-    /keepwarm always        arm a six-hour window at every session start, remembered across sessions
-    /keepwarm 6h every 2m   pinging every two minutes; a testing knob, floor 1m, forgotten after this window
-    /keepwarm status        the warming window, next ping and last receipt
-    /keepwarm off           stop, forget the window, and turn always off
-    /cache-tax              the card
-    /cache-tax guard warn   show the price and send (the hook's default)
-    /cache-tax guard refuse drop a cold send once, the resend goes through (this mod's default)
+| Command | What it does |
+|---|---|
+| `/keepwarm` | Keep the cache warm for 6 hours |
+| `/keepwarm 90m` | Keep it warm for a window of your own (`2h30m`, `45m`) |
+| `/keepwarm always` | Start a 6-hour window in every session, until `/keepwarm off` |
+| `/keepwarm status` | Time left in the window, next ping, last ping's cost |
+| `/keepwarm off` | Stop, and turn `always` off |
+| `/cache-watch` | The status card: state, context size, cold cost, keepwarm, this session's cold writes |
+| `/cache-watch pay` | Same as the Pay and send button |
+| `/cache-watch fresh` | Same as the Start fresh button |
+| `/cache-watch preview` | Show the hold card with this session's numbers, without holding anything |
+| `/cache-watch guard warn` | Don't hold cold sends; only show the price |
+| `/cache-watch guard refuse` | Hold cold sends again (the default) |
+| `/cache-watch footer off` | Move the status back above the prompt box (`on` moves it to the footer) |
 
-The refusal, verbatim:
+The buttons have command twins on purpose. In the desktop app a click can get lost while any mod redraws, and the commands always land. Every command and every label is in [the command reference](docs/commands.md).
 
-    cache-tax: the prompt cache went cold 2h00m ago. Sending this re-writes up to 200,502 tokens at $20/MTok = $4.01 (a warm turn would have cost $0.05). Send it again to pay it, and keepwarm will then hold the cache for 3h00m. Or /clear and start from a note.
+## What's different from cache-tax
 
-The figure is an upper bound. The context count the engine reports for a resumed session is the last response's input, cache read, cache write and output together, and the resume payload carries no separate output count to take off; on one 15-day-old session the refusal said 330,316 tokens and $6.61 and the write that followed was 314k tokens, $6.28.
+- **The hold card.** cache-tax drops a cold send once and shows the price as text, and you send again to pay. cache-watch holds it on a card with the price drawn and three choices. Sending the same message again still pays, as before.
+- **It draws in the desktop app.** cache-tax decides when the session starts whether it can draw above the prompt. In the desktop app the Code tab connects a moment later, so cache-tax never draws its band there. cache-watch checks each time it draws.
+- **The footer.** The status lives in the prompt footer and shows all the time, not only while keepwarm runs.
+- **55-minute pings** instead of 50. That saves one ping in a 6-hour window and still leaves 5 minutes of slack before the hour runs out. [Why 55](docs/how-it-works.md#why-55-minutes).
+- **`/cache-watch`** instead of `/cache-tax`.
 
-While keepwarm is armed, the terminal and Desktop Code tab show a row above the prompt with the Cache Tax cube. Its lid is green for warm, orange for cold, and grey before the first turn or after compaction. The bold state label matches; the timer and receipt text use normal weight. Ghostty and kitty can draw the image; other terminals show `[>]` in its place. A nonempty `NO_COLOR` selects a bold text icon and an uncolored state label. The row also says `warm`, `cold` or `unknown`, so color is never the only signal. These states use the same one-hour clock as `/cache-tax`; they are estimates, not a live server cache check.
+Everything else is cache-tax's: the guard's logic, keepwarm, the cost maths and the price table.
 
-The row includes the warming window, next ping and last readback. A stopped loop shows a neutral symbol and its reason. `/keepwarm off` or an expired window removes the row. Surveys temporarily take priority, and other mods' content stays in the band. Sessions without this band retain the plain status text.
+## Docs
 
-The cube follows Claude's light or dark theme. Its terminal image also has a contrasting edge for terminal backgrounds that differ from that setting. The embedded assets come from the website's official SVGs; maintainers can regenerate them with `python3 tools/generate-status-icons.py` and `rsvg-convert` installed. No image files are read or fetched at runtime.
+- [How it works](docs/how-it-works.md): the prompt cache, what a cold send costs, what a ping is, why 55 minutes, and why you wouldn't keep it warm all the time.
+- [Command reference](docs/commands.md): every command, footer label and status card line, what's stored, and what the mod can reach.
+- [Development](docs/development.md): running it from a checkout, tests, type-checking, and making a release.
 
-The mod reads the theme and `NO_COLOR` once when the session starts. Accepted theme changes update the icon immediately; ordinary redraws do not reread either setting. Set `NO_COLOR` before starting the session.
+## Licence
 
-## Both forms installed
-
-The hook and the mod share a name and a job, so having both means two guards on every cold send. The mod checks at session start whether the hook's `/cache-tax:status` command exists and says so once. Keep one guard. The hook remains an option for people who prefer settings hooks. Before uninstalling it, check your status line: the 🧊 row wired to `cache-tax.js` comes from the hook's files. This mod draws above the prompt while keepwarm is armed; it does not replace your shell status line.
-
-## What it can reach
-
-Validated on Claude Code 2.1.289:
-
-    ❯ ./register.ts hooks: config.set{key=theme}, ui.render{component=AbovePrompt}, session.start, classic.SessionStart, command.run{command=keepwarm}, command.run{command=cache-tax}, prompt.submit, turn.step, turn.complete, session.compact
-    ❯ ./register.ts calls: $.clock.after (via arm), $.clock.now, $.command.list, $.command.register, $.config.list, $.env.get, $.model.fork (via ping), $.session.id, $.session.model, $.session.usage, $.store.delete (via prune, startWindow, stop), $.store.get, $.store.set, $.ui.invalidate, $.ui.log, $.ui.resolve, $.ui.status
-    ❯ ./register.ts env reads: NO_COLOR
-
-Reach L2, drives Claude. Sees every prompt you type, every model request's timing and every answer's token counts.
-
-    Threat model for cache-tax (reach L2, drives Claude)
-    1. Reads:    of each prompt, whether it starts with a slash and nothing else (the text is passed on untouched, never kept, never logged); the time; the token counts and model id the engine already holds on turn.complete and on the fork's reply; the resume fields Claude Code computes for settings hooks; the command list, the session id and, when a resumed session's fields carry no model id, the session's model once at start; from its own $.store, the keepwarm deadline and the ping period keyed by session id, plus the global always switch and guard mode
-    2. Runs:     one $.model.fork per idle stretch inside a keepwarm window, one per ping period (50 minutes unless the testing knob set it, floor 1 minute), never outside the window, never onto a cache the mod already knows is cold, never after a readback that read nothing or wrote at least a tenth of what it read
-    3. Sends:    nothing leaves the machine except the fork, an API request over the session's own transcript with a fixed one-line prompt
-    4. Persists: in $.store, the keepwarm deadline and the ping period under this session's id, and the always switch and the guard mode for every session; a window that has ended is deleted at stop and at this session's next start, together with the bare keys of a 2.1.0 store; another session's keys are never deleted here, because a read followed by a delete cannot be made atomic against that session renewing its window, so a session that armed keepwarm and never came back leaves two small keys behind; the session's cold-write tally lives in memory and dies with the session
-    5. Hostile input: the only text it parses is the argument of its two commands, matched against a duration regex and five literals; of the prompt text only the first non-blank character is inspected, for a slash; tool results and files never reach a branch; the fork's prompt is a constant, so nothing crafted can be sent through it; a refusal only ever drops the user's own message, and the resend is unconditional; if a hook throws, the engine skips it and the message enters unguarded, with one dim line
-
-## Cost and the plan-limit question
-
-Prices are the list table, where Fable 5.1 reads at $0.25, writes the 1h tier at $20 and answers at $50 per million tokens; Sonnet 5 has its own row ($0.20, $4, $10). On an API key the arithmetic is plain. A ping bills the cache read, its own few uncached tokens at the base rate, and whatever the model says back at the output rate; the displayed ping cost counts all of it, since a fork takes no output cap and a model at high effort may think before it says "warm". A comeback after the lapse is a write. The card prints the read-only upper bound for your model, 80 pings on Fable 5.1, with the idle that covers at the current ping period; a real ping costs a little more than a read, so the true break-even sits below that number. On a subscription the dollars are a yardstick, not the bill, and how a cache read weighs against the 5-hour and weekly limits is not documented anywhere I could find. Watch the rate-limit row of your status line during the first window.
-
-## Limits
-
-- Mods require Claude Code 2.1.287+. They are on by default, but local settings, safe mode or organization policy can prevent them from loading. See [mod controls](https://code.claude.com/docs/en/plugins/mods/overview#turn-mods-on-or-off).
-- The 50-minute schedule needs a one-hour main cache. Included subscription usage has it by default. Other billing paths need [`promptCacheTtl`](https://code.claude.com/docs/en/prompt-caching#choose-the-ttl-yourself) set to `"1h"`.
-- One transcript-verified return at the default interval, Fable 5.1 on a subscription, 19 September 2026: `/keepwarm` armed at minute 42 of a break, the ping fired at minute 50 and read 157k, and the message sent at minute 62 read 156,886 tokens from cache and wrote 2,255. Claude Code's own cache countdown reset to 58 minutes after the ping, so the fork carried the one-hour TTL. One run, one configuration: it shows the ping kept that cache alive past the hour, not net savings for every setup. Claude Code documents forks in its non-main request bucket, normally five minutes. In this run, the fork still read the one-hour session prefix and reset the native countdown. That is observed behavior in one configuration, not proof that every provider handles the buckets identically.
-- A ping that reads warm proves the cache was warm then. Prefix changes can invalidate the cache regardless of time. The exact effect depends on the model and when Claude Code applies the change; see [Claude Code's cache behavior](https://code.claude.com/docs/en/prompt-caching).
-- Resume fields let the guard check the first ordinary send after resuming. If those fields are absent, the first turn seeds its clock and context.
-- The refusal's token count is an upper bound: it is the context the engine reports for the last response, which on a resume includes that response's output, and the mod has no separate output count to subtract.
-- The cold-write tally is per session and in memory; /clear empties it.
-- Context size is the engine's live window figure. A turn's own usage is its responses summed, which on a ten-step turn is ten reads of the context, so it is only the fallback where the host reports no live figure.
-
-## Local development
-
-From a local checkout, load it for one session:
-
-    claude --plugin-dir .
-
-To keep it installed, use the [marketplace commands](#install).
-
-## Prove it on your own session
-
-The mock-clock tests prove the timer, the guard and the scoring, not that a fork hits the main cache. One ping proves that, and it costs a cache read plus the answer. In any warm session:
-
-    > Reply with one word: ready
-    > /keepwarm 1h every 1m
-
-Watch the row above the prompt after a minute, or the plain status text on other surfaces. `last ping read 20k $0.01` reports the fork's readback. `keepwarm stopped: the ping read ... and wrote ...` means the readback did not meet the warm threshold; the loop has stopped. An API failure, interruption, empty reply or missing conversation also stops the loop with a reason. Older engines that return null show a combined cold-snapshot or API-failure message. Finish with `/keepwarm off`. This short check establishes a cache read, not retention across the default 50-minute interval.
-
-## Tests and typecheck
-
-Run from the repository root:
-
-```sh
-claude plugin validate .claude-plugin/plugin.json
-claude plugin test .
-```
-
-The [56 tests](tests/register.test.ts) use a mock clock and engine. They cover:
-
-- **Guard:** refuse once and resend, warn mode, slash commands, small contexts, resume seeding and cold-write scoring.
-- **Warming:** command defaults, always/off, idle resets, usage-based stopping, cold-window expiry and delayed timers after sleep.
-- **Session state:** isolated store keys, restored windows, legacy cleanup, clear/compaction resets and subagent isolation.
-- **Pricing and display:** model matching, output and uncached input costs, context counts, duration formatting and the read-only break-even figure.
-- **Indicator:** terminal images and desktop SVGs, theme selection, warm/cold transitions, resume, compaction, clear, expiry, surveys, other mods' content, text alternatives and `NO_COLOR` fallback.
-- **Preferences:** one read per session, immediate theme updates, denied changes and the effective theme returned by the settings writer.
-- **Fork failures:** structured failure results from current engines and the null result returned by older releases stop without retrying.
-
-The render tests check the element tree, not native terminal or desktop pixels. They do not validate server-side cache retention. See [the live check](#prove-it-on-your-own-session).
-
-### Typecheck
-
-Load this checkout with `claude --plugin-dir .` to generate declarations beside the plugin. Then, from the repository root:
-
-```sh
-npx -p typescript tsc -p .
-```
-
-Generated declarations live in `.claude-plugin/types/`. Keep them untracked.
+MIT, see [LICENSE](LICENSE). cache-watch is built on [cache-tax](https://github.com/karanb192/cache-tax) by Karan Bansal, also MIT, and his copyright notice is kept.
