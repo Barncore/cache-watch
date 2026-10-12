@@ -2,7 +2,7 @@ import { describe, expect, mock, test, tier } from 'claude-code/testing'
 import type { CommandRunInput, ConfigSetInput, ModelForkResult, On, PromptSubmitInput, RenderPropsOf, SessionStartInput, TurnCompleteInput, TurnUsage } from 'claude-code'
 
 import { statusIcons } from '../hooks/status-icons'
-import { HELD_DROP, bar, canHold, compactStatsSvg, fmtDuration, footerLabel, freshState, parseDuration, quoted, resetForClear, seedFromResume, statsSvg, warmShare } from '../hooks/register'
+import { HELD_DROP, RESUME_LOG_AFTER_MS, bar, canHold, compactStatsSvg, fmtDuration, footerLabel, freshState, parseDuration, quoted, resetForClear, resumeNoteFrom, seedFromResume, statsSvg, warmShare } from '../hooks/register'
 
 tier('user')
 
@@ -1157,5 +1157,87 @@ describe('footer label', () => {
     world(on, [], { store: new Map<string, unknown>([['footer', 'off']]) })
     await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
     expect((await $.command.run(run('cache-watch', 'footer'))).text).toBe('cache-watch: footer off. The footer has not drawn in this session yet, so the status stays in the band. /cache-watch footer on or off moves the status.')
+  })
+})
+
+describe('resume card', () => {
+  const tall = { ...bandProps, maxRows: 40 }
+  const coldResume = { source: 'resume' as const, model: 'claude-opus-5-5', seconds_since_last_response: 13 * 24 * 3600, context_tokens: 230418, prompt_cache_likely_expired: true, estimated_cache_write_usd: 1.84 }
+
+  test('desktop: a cold resume shows a card with the engine estimate instead of a log line, and Dismiss closes it', async ($, on) => {
+    const clock = mock.clock(on, { now: 400 * HOUR })
+    const w = world(on, [])
+    await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'AbovePrompt', props: tall })
+    await $.classic.SessionStart(coldResume)
+    expect((await ui.find({ type: 'Text', text: /Resuming a cold chat/ }))?.text).toBe('CACHE WATCH · Resuming a cold chat · cold for 12d 23h')
+    const alts = (await ui.findAll({ type: 'Svg' })).map(el => String(el.props.alt))
+    expect(alts.some(alt => /^Send it now: \$1\.84, re-writes up to 230,418 tokens at \$8\/MTok\. A warm turn: \$0\.12/.test(alt))).toBe(true)
+    expect((await ui.find({ key: 'resume-fresh' }))?.props.label).toBe('Start fresh')
+    await clock.advance(RESUME_LOG_AFTER_MS + 1)
+    expect(w.logs.filter(line => line.startsWith('resuming cold'))).toEqual([])
+    await ui.press({ key: 'resume-dismiss' })
+    expect(await ui.find({ text: /Resuming a cold chat/ })).toBe(undefined)
+  })
+
+  test('terminal: the card draws text bars, and the status row stays under it', async ($, on) => {
+    mock.clock(on, { now: 400 * HOUR })
+    world(on, [])
+    await $.session.start({ ...session, surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'terminal', component: 'AbovePrompt', props: tall })
+    await $.classic.SessionStart(coldResume)
+    expect(await ui.find({ type: 'Svg' })).toBe(undefined)
+    expect((await ui.find({ type: 'Text', text: /^Send it now/ }))?.text).toMatch(/^Send it now {2}\$1\.84 +█+ +re-writes up to 230,418 tokens at \$8\/MTok$/)
+    expect((await ui.find({ type: 'Text', text: /^(warm|cold|unknown|stopped)$/ }))?.text).toBe('cold')
+  })
+
+  test('sending closes the note, and the hold card takes over for the cold send', async ($, on) => {
+    mock.clock(on, { now: 400 * HOUR })
+    world(on, [])
+    await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'AbovePrompt', props: tall })
+    await $.classic.SessionStart(coldResume)
+    await $.prompt.submit(prompt('Where were we?'))
+    expect(await ui.find({ text: /Resuming a cold chat/ })).toBe(undefined)
+    expect(await ui.find({ text: /Your message is on hold/ })).not.toBe(undefined)
+  })
+
+  test('Start fresh clears the conversation; /cache-watch fresh and dismiss are its twins', async ($, on) => {
+    const clock = mock.clock(on, { now: 400 * HOUR })
+    world(on, [])
+    const commands: string[] = []
+    on('command.run', { command: 'clear' }, ($, e) => { commands.push(e.command); return { text: '' } })
+    await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'AbovePrompt', props: tall })
+    await $.classic.SessionStart(coldResume)
+    await ui.press({ key: 'resume-fresh' })
+    expect(commands).toEqual(['clear'])
+    expect(await ui.find({ text: /Resuming a cold chat/ })).toBe(undefined)
+
+    await $.classic.SessionStart(coldResume)
+    expect((await $.command.run(run('cache-watch', 'fresh'))).text).toBe('cache-watch: starting fresh')
+    await clock.advance(1)
+    expect(commands).toEqual(['clear', 'clear'])
+
+    await $.classic.SessionStart(coldResume)
+    expect((await $.command.run(run('cache-watch', 'dismiss'))).text).toBe('cache-watch: the resume note is closed')
+    expect(await ui.find({ text: /Resuming a cold chat/ })).toBe(undefined)
+    expect((await $.command.run(run('cache-watch', 'dismiss'))).text).toBe('cache-watch: nothing to dismiss')
+  })
+
+  test('a surface that never draws the band gets the plain line after a short wait', async ($, on) => {
+    const clock = mock.clock(on, { now: 400 * HOUR })
+    const w = world(on, [])
+    await $.session.start(session)
+    await $.classic.SessionStart(coldResume)
+    expect(w.logs.filter(line => line.startsWith('resuming cold'))).toEqual([])
+    await clock.advance(RESUME_LOG_AFTER_MS + 1)
+    expect(w.logs.filter(line => line.startsWith('resuming cold'))).toEqual(['resuming cold. The first message re-writes 230,418 tokens, about $1.84. /clear and paste a summary if you only need the conclusions.'])
+  })
+
+  test('the rate comes from the engine estimate when there is one, else the price table', () => {
+    const s = { ...freshState(), ctx: 200000, lastModel: 'claude-opus-5-5' }
+    expect(resumeNoteFrom(s, 1.6)).toEqual({ tokens: 200000, rate: '$8/MTok', coldUsd: 1.6, warmUsd: 0.1 })
+    expect(resumeNoteFrom(s, undefined)).toEqual({ tokens: 200000, rate: '$10/MTok', coldUsd: 2, warmUsd: 0.1 })
   })
 })

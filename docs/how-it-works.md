@@ -18,6 +18,12 @@ cache-watch doesn't ask Anthropic whether the cache is alive. It keeps its own c
 
 It's an estimate, and a good one, but some things can break a cache before the hour is up. Changing the model is one. Anything that changes the start of the conversation is another, because the cache only matches an identical beginning. After a compaction the clock resets and the footer drops the warm or cold state until your next turn, because the old cache no longer matches.
 
+## The resume card
+
+When you open an old chat, Claude Code tells mods how long it's been since the last reply and estimates what the first message will cost. If the cache has likely gone cold and the conversation is big, cache-watch shows a card above the prompt box with that price next to a warm turn's. It's a heads-up before you type anything. Start fresh is often the better deal when you only need the conclusions of an old chat.
+
+It used to be a plain line in the chat. A mod can't style lines in the chat, so the card took its place.
+
 ## The hold card
 
 When the clock says cold and the conversation is at least 50,000 tokens, cache-watch holds your next message instead of sending it. The card shows two prices side by side: what sending now costs (the re-write at the cache-write rate) and what a warm turn would have cost (the same context at the read rate).

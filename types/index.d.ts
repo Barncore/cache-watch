@@ -28,8 +28,20 @@ export type Receipt = {
   note: string | null
 }
 
+/** A cold resume's figures, shown on a card above the prompt until the next message, /clear or Dismiss. */
+export type ResumeNote = {
+  /** The context the first message would re-write, in tokens. */
+  tokens: number
+  /** The cache-write rate as shown, such as `$8/MTok`. */
+  rate: string
+  /** The cold write: Claude Code's own estimate when the resume carried one, else the price table's. */
+  coldUsd: number | null
+  /** The same context at the cache-read rate. */
+  warmUsd: number | null
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'cache-watch': { held: Held | null; showStatus: boolean; receipt: Receipt | null }
+    'cache-watch': { held: Held | null; showStatus: boolean; receipt: Receipt | null; resumed: ResumeNote | null }
   }
 }

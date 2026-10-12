@@ -2,8 +2,8 @@
 // is held above the prompt with its price and three buttons, instead of being
 // dropped with the price as text. Everything else is upstream's.
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
-import type { Held, Receipt } from '../types'
+import type { EngineInterface, Register, RenderElement } from 'claude-code'
+import type { Held, Receipt, ResumeNote } from '../types'
 import { statusIcons } from './status-icons'
 
 const TTL_MS = 60 * 60 * 1000
@@ -149,6 +149,18 @@ export function seedFromResume(s: State, e: ResumeFields, now: number): string |
   if (e.prompt_cache_likely_expired !== true || s.ctx < BIG_TOKENS) return null
   const usd = typeof e.estimated_cache_write_usd === 'number' ? fmtUsd(e.estimated_cache_write_usd) : fmtUsd(coldUsd(s))
   return `resuming cold. The first message re-writes ${s.ctx.toLocaleString('en-US')} tokens, about ${usd}. /clear and paste a summary if you only need the conclusions.`
+}
+
+/** The resume card's figures: Claude Code's own estimate of the cold write when the resume carried one, else the price table's. */
+export function resumeNoteFrom(s: State, estimate: unknown): ResumeNote {
+  const price = priceOf(s.lastModel)
+  const engine = typeof estimate === 'number' && s.ctx > 0
+  return {
+    tokens: s.ctx,
+    rate: engine ? `$${Number((estimate / s.ctx * 1e6).toPrecision(2))}/MTok` : price ? `$${price[1]}/MTok` : 'the cache-write rate',
+    coldUsd: engine ? estimate : coldUsd(s),
+    warmUsd: warmUsd(s),
+  }
 }
 
 /** The row above the prompt: keepwarm's status while a window is armed, else the cache clock on its own. */
@@ -357,6 +369,9 @@ function card(s: State, now: number): string {
 const held = atom({ plugin: 'cache-watch', key: 'held' } as const, null)
 const showStatus = atom({ plugin: 'cache-watch', key: 'showStatus' } as const, false)
 const receipt = atom({ plugin: 'cache-watch', key: 'receipt' } as const, null)
+const resumed = atom({ plugin: 'cache-watch', key: 'resumed' } as const, null)
+/** How long a cold resume waits for a band before it logs its plain line instead: the desktop app attaches after the session starts. */
+export const RESUME_LOG_AFTER_MS = 3000
 export const RECEIPT_MS = 15 * 60 * 1000
 export const HELD_DROP = 'Held by Cache Watch. Choose an option above the prompt box, or send it again to pay.'
 const QUOTE_MAX = 160
@@ -487,6 +502,23 @@ async function startFresh($: EngineInterface) {
   }
   // The message waits in the box for the new conversation, to send or edit.
   await $.prompt.fill({ text: h.text })
+}
+
+/** Start fresh from the resume card: nothing is held, so it only clears. */
+async function freshFromResume($: EngineInterface) {
+  await update($, resumed, () => null)
+  try {
+    await $.command.run({ command: 'clear' })
+  } catch {
+    $.ui.toast('cache-watch: the conversation was not cleared. Type /clear to start fresh.')
+  }
+}
+
+/** A surface that never drew the band gets the resume note as the plain line upstream logged. */
+async function resumeFallback($: EngineInterface, s: State, line: string) {
+  if (s.hasBand || !(await read($, resumed))) return
+  await update($, resumed, () => null)
+  $.ui.log(line)
 }
 
 export function receiptText(r: Receipt): string {
@@ -623,8 +655,55 @@ export const register: Register = on => {
       ] })
       return Box({ flexDirection: 'column', gap: compact ? 0 : 1, children: [rest, holdCard, buttons] })
     }
+    // A cold resume's note, styled like the compact hold card, in place of a transcript line no hook can restyle.
+    const note = await read($, resumed)
+    const notice: RenderElement[] = []
+    if (note) {
+      const { Box, Text, Button } = $.ui.resolve(e)
+      const figures: Held = { ...note, text: '' }
+      let stats
+      if (e.surface === 'desktop') {
+        const width = Math.max(280, Math.min(680, e.props.bodyColumns * 8 - 32))
+        stats = $.ui.resolve(e).Svg({ source: compactStatsSvg(figures, light, width), alt: statsAlt(figures), width, height: 44 })
+      } else {
+        const cells = Math.max(6, Math.min(24, Math.floor((e.props.bodyColumns - 40) / 2)))
+        const [coldFill, coldTrack] = bar(1, cells)
+        const [warmFill, warmTrack] = bar(warmShare(figures), cells)
+        stats = Box({ flexDirection: 'column', children: [
+          Text({ children: [
+            Text({ dimColor: true, children: ['Send it now  '] }),
+            Text({ color: noColor ? undefined : 'claude', bold: true, children: [fmtUsd(figures.coldUsd).padEnd(8)] }),
+            Text({ color: noColor ? undefined : 'claude', children: [coldFill] }),
+            Text({ dimColor: true, children: [coldTrack, `  re-writes up to ${figures.tokens.toLocaleString('en-US')} tokens at ${figures.rate}`] }),
+          ] }),
+          Text({ children: [
+            Text({ dimColor: true, children: ['A warm turn  '] }),
+            Text({ color: noColor ? undefined : 'success', bold: true, children: [fmtUsd(figures.warmUsd).padEnd(8)] }),
+            Text({ color: noColor ? undefined : 'success', children: [warmFill] }),
+            Text({ dimColor: true, children: [warmTrack, '  what it would have cost'] }),
+          ] }),
+        ] })
+      }
+      const coldFor = s.lastRequestAt && isCold(s, now) ? ` · cold for ${fmtDuration(now - s.lastRequestAt - TTL_MS)}` : ''
+      notice.push(
+        Box({ key: 'resume', flexDirection: 'column', borderStyle: 'round', borderColor: 'subtle', paddingX: 1, children: [
+          Text({ wrap: 'truncate-end', children: [
+            Text({ color: noColor ? undefined : 'claude', bold: true, children: ['CACHE WATCH'] }),
+            Text({ dimColor: true, children: [' · '] }),
+            Text({ bold: true, children: ['Resuming a cold chat'] }),
+            Text({ dimColor: true, children: [coldFor] }),
+          ] }),
+          stats,
+          Text({ wrap: 'wrap', children: ['Only need the conclusions? Start fresh, then paste a summary.'] }),
+        ] }),
+        Box({ key: 'resume-buttons', flexDirection: 'row', gap: 2, alignItems: 'center', children: [
+          Button({ key: 'resume-fresh', label: 'Start fresh', onPress: () => { void freshFromResume($) } }),
+          Button({ key: 'resume-dismiss', label: 'Dismiss', plain: true, onPress: () => { void update($, resumed, () => null) } }),
+        ] }),
+      )
+    }
     const text = rowText(s, now)
-    if (!text || (s.deadline && now >= s.deadline)) return rest
+    if (!text || (s.deadline && now >= s.deadline)) return notice.length ? $.ui.resolve(e).Box({ flexDirection: 'column', children: [rest, ...notice] }) : rest
     const state = s.stopped ? 'stopped' : !s.lastRequestAt || s.compacted ? 'unknown' : isCold(s, now) ? 'cold' : 'warm'
     const color = noColor ? undefined : state === 'warm' ? 'success' : state === 'cold' ? (light ? '#c15f3c' : '#d97757') : undefined
     const { Box, Text } = $.ui.resolve(e)
@@ -646,7 +725,7 @@ export const register: Register = on => {
     ] })
     const rows = footer === 'on' && footerSeen.surface === e.surface ? [] : [row]
     const paid = await read($, receipt)
-    if (!paid || now - paid.at >= RECEIPT_MS) return rows.length ? Box({ flexDirection: 'column', children: [rest, ...rows] }) : rest
+    if (!paid || now - paid.at >= RECEIPT_MS) return rows.length || notice.length ? Box({ flexDirection: 'column', children: [rest, ...notice, ...rows] }) : rest
     // The paid write as a pill under the row: what the log line said, drawn where it can be styled.
     const shield = e.surface === 'desktop' ? $.ui.resolve(e).Svg({ source: shieldSvg(light), width: 16, height: 16, alt: 'Paid' })
       : Text({ color: noColor ? undefined : 'success', children: ['✓'] })
@@ -658,7 +737,7 @@ export const register: Register = on => {
         ...(paid.warmForMs > 0 ? [Text({ dimColor: true, children: [' /keepwarm off to stop'] })] : []),
       ] }),
     ] })
-    return Box({ flexDirection: 'column', gap: 1, children: [rest, pill, ...rows] })
+    return Box({ flexDirection: 'column', gap: 1, children: [rest, ...notice, pill, ...rows] })
   })
 
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
@@ -726,7 +805,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'cache-watch',
       description: 'Prompt cache state, cold price and this session\'s cold writes; guard warn|refuse (cache-watch, the Mod)',
-      argumentHint: '[status | preview | pay | fresh | guard warn | guard refuse | footer on|off]',
+      argumentHint: '[status | preview | pay | fresh | dismiss | guard warn | guard refuse | footer on|off]',
       immediate: true,
     })
     // The hook form of cache-tax ships a /cache-tax:status skill; both installed means two guards.
@@ -746,6 +825,7 @@ export const register: Register = on => {
       s.stopped = null
       resetForClear(s)
       await release($)
+      await update($, resumed, () => null)
       s.sid = await $.session.id()
       updateStatus($, s, await $.clock.now())
       return r
@@ -753,7 +833,11 @@ export const register: Register = on => {
     const line = seedFromResume(s, e, await $.clock.now())
     // The resume payload may omit the model; without it the guard cannot price the cold write.
     if (!s.lastModel) s.lastModel = await $.session.model()
-    if (line) $.ui.log(line)
+    if (line) {
+      // A card above the prompt where a band draws; the desktop app's band arrives after this event, so wait before falling back.
+      await update($, resumed, () => resumeNoteFrom(s, e.estimated_cache_write_usd))
+      $.clock.after(RESUME_LOG_AFTER_MS, () => { void resumeFallback($, s, line) })
+    }
     // The seeded clock decides whether a restored or always window pings before the first turn: never when it is cold.
     await arm($, s)
     return r
@@ -798,6 +882,16 @@ export const register: Register = on => {
     const words = String(e.args ?? '').trim().split(/\s+/).filter(Boolean)
     const now = await $.clock.now()
     // Keyboard twins of the card's buttons: the Code tab can drop a click while any mod's state write redraws the band.
+    if (words[0] === 'fresh' && !(await read($, held)) && (await read($, resumed))) {
+      // The resume card's Start fresh: nothing held, so it only clears, once this dispatch returns.
+      $.clock.after(0, () => { void freshFromResume($) })
+      return { text: 'cache-watch: starting fresh' }
+    }
+    if (words[0] === 'dismiss') {
+      if (!(await read($, resumed))) return { text: 'cache-watch: nothing to dismiss' }
+      await update($, resumed, () => null)
+      return { text: 'cache-watch: the resume note is closed' }
+    }
     if (words[0] === 'pay' || words[0] === 'fresh') {
       if (!(await read($, held))) return { text: 'cache-watch: no message is on hold' }
       // A command hook may not submit a prompt or run a command (each would wait on this dispatch): do it once it returns.
@@ -838,6 +932,8 @@ export const register: Register = on => {
     if (e.origin.kind === 'plugin') return next(e)
     // The person moved on: the last receipt has been seen.
     if (await read($, receipt)) await update($, receipt, () => null)
+    // The resume note has done its job once the person writes; a cold send gets the hold card instead.
+    if (await read($, resumed)) await update($, resumed, () => null)
     if (typeof e.text !== 'string' || e.text.trimStart().startsWith('/')) return next(e)
     const now = await $.clock.now()
     if (!isCold(s, now) || s.ctx < BIG_TOKENS) return next(e)

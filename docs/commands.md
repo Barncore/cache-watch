@@ -1,6 +1,6 @@
 # cache-watch command reference
 
-Every command, label and setting in cache-watch 1.0.0. For the reasons behind them, see [How it works](how-it-works.md).
+Every command, label and setting in cache-watch 1.1.0. For the reasons behind them, see [How it works](how-it-works.md).
 
 ## /keepwarm
 
@@ -30,7 +30,8 @@ The reason shows in `/keepwarm status` and on the `/cache-watch` card.
 |---|---|
 | `/cache-watch` | Prints the status card (below). `/cache-watch status` does the same. |
 | `/cache-watch pay` | Sends the held message and pays the cold write, as the **Pay and send** button does. |
-| `/cache-watch fresh` | Runs `/clear` and puts the held message back in the prompt box, as **Start fresh** does. |
+| `/cache-watch fresh` | Runs `/clear` and puts the held message back in the prompt box, as **Start fresh** does. With no message held and the resume card showing, it only runs `/clear`. |
+| `/cache-watch dismiss` | Closes the resume card, as its **Dismiss** button does. |
 | `/cache-watch preview` | Shows the hold card with this session's numbers, holding nothing. Any button closes it. |
 | `/cache-watch guard refuse` | Holds a cold send once on the card. This is the default. |
 | `/cache-watch guard warn` | Lets cold sends through and shows the price on the receipt pill afterwards. |
@@ -79,6 +80,22 @@ The status row above the prompt box, used when the footer is off or hasn't drawn
 | Buttons | **Pay and send**, **Start fresh**, **Show cache status**. |
 
 When the band above the prompt has fewer rows than the full card needs (24 in the desktop app, 18 in a terminal), the card turns compact: a one-line header and thin bars, with the buttons still in view.
+
+## The resume card
+
+Opening an old chat whose cache Claude Code reports as likely expired, with 50,000 tokens or more of context, shows this card above the prompt box.
+
+| Part | Shows |
+|---|---|
+| Header | `CACHE WATCH`, "Resuming a cold chat", and how long the cache has been cold. |
+| Send it now | What your first message will cost to re-write the cache. This is Claude Code's own estimate when the resume carries one, and the rate shown is worked out from it. |
+| A warm turn | What the same turn would cost with the cache warm. |
+| Tip | "Only need the conclusions? Start fresh, then paste a summary." |
+| Buttons | **Start fresh** runs `/clear`. **Dismiss** closes the card. |
+
+The card goes when you send a message (a cold send then gets the hold card), run `/clear`, or press either button. Where no band draws, such as the VS Code panel, cache-watch logs a one-line version in the chat instead, 3 seconds after the session resumes.
+
+## The receipt pill
 
 After a paid cold write, a receipt pill above the prompt box says what the write cost and how long keepwarm now holds the cache. It goes at your next message, or after 15 minutes.
 

@@ -23,6 +23,7 @@ Sending to a 442k-token conversation that went cold days ago. The message waits 
   - **Pay and send** sends it as it is. cache-watch then keeps the cache warm for 3 hours, so you don't pay the re-write twice.
   - **Start fresh** runs `/clear` and puts your message back in the prompt box for a new conversation. `/resume` still brings the old one back.
   - **Show cache status** opens the status card inside the hold card.
+- **Resume card.** Open an old chat whose cache has gone cold and a card above the prompt box says what your first message will cost, with a **Start fresh** button for when you only need the conclusions. It goes when you send, start fresh or dismiss it.
 - **Keepwarm.** `/keepwarm` keeps the cache warm for 6 hours, with a cheap ping 55 minutes after your last request. [How it works](docs/how-it-works.md) explains what a ping is and what it costs.
 
 The only request cache-watch makes of its own is the keepwarm ping: a one-line question over your conversation, whose reply is thrown away and never shows in the chat. It keeps a few settings in Claude Code's plugin store on your machine, listed in [the reference](docs/commands.md#what-it-stores).
@@ -93,7 +94,8 @@ Then restart the app again. A running session keeps the copy it started with.
 | `/keepwarm off` | Stop, and turn `always` off |
 | `/cache-watch` | The status card: state, context size, cold cost, keepwarm, this session's cold writes |
 | `/cache-watch pay` | Same as the Pay and send button |
-| `/cache-watch fresh` | Same as the Start fresh button |
+| `/cache-watch fresh` | Same as the Start fresh button, on the hold card or the resume card |
+| `/cache-watch dismiss` | Close the resume card |
 | `/cache-watch preview` | Show the hold card with this session's numbers, without holding anything |
 | `/cache-watch guard warn` | Don't hold cold sends; only show the price |
 | `/cache-watch guard refuse` | Hold cold sends again (the default) |
