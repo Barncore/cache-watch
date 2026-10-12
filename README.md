@@ -23,7 +23,7 @@ Sending to a 442k-token conversation that went cold days ago. The message waits 
   - **Pay and send** sends it as it is. cache-watch then keeps the cache warm for 3 hours, so you don't pay the re-write twice.
   - **Start fresh** runs `/clear` and puts your message back in the prompt box for a new conversation. `/resume` still brings the old one back.
   - **Show cache status** opens the status card inside the hold card.
-- **Resume card.** Open an old chat whose cache has gone cold and a card above the prompt box says what your first message will cost, with a **Start fresh** button for when you only need what the old chat worked out: copy that, start fresh and paste it in. It goes when you send, start fresh or dismiss it.
+- **Resume card.** Open an old chat whose cache has gone cold and a card above the prompt box says what your first message will cost, with a **Start fresh** button for when the price isn't worth it. It goes when you send, start fresh or dismiss it.
 - **Keepwarm.** `/keepwarm` keeps the cache warm for 6 hours, with a cheap ping 55 minutes after your last request. [How it works](docs/how-it-works.md) explains what a ping is and what it costs.
 
 The only request cache-watch makes of its own is the keepwarm ping: a one-line question over your conversation, whose reply is thrown away and never shows in the chat. It keeps a few settings in Claude Code's plugin store on your machine, listed in [the reference](docs/commands.md#what-it-stores).

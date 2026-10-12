@@ -1,6 +1,6 @@
 {
   "name": "cache-watch",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Watches the prompt cache: its state in the prompt footer, and a cold send held above the prompt with its price and Pay and send, Start fresh and Show cache status buttons. Fork of karanb192/cache-tax 2.2.1 (MIT). Warming uses model requests and costs tokens.",
   "author": {
     "name": "Barncore"
