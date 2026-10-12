@@ -981,7 +981,7 @@ describe('hold card', () => {
       expect(await isHeld(ui)).toBe(false)
       await $.turn.complete(turn({ usage: usage({ cache_read_input_tokens: 0, cache_creation_input_tokens: 200000 }) }))
       expect(await ui.find({ text: /Cold write paid: \$4\.00 for 200k tokens/ })).toBeTruthy()
-      expect(await ui.find({ text: /Not held: a message with images or an @file mention can't wait on the card\./ })).toBeTruthy()
+      expect(await ui.find({ text: /Your message went straight through, because a message with an image or an @file mention can't be held\./ })).toBeTruthy()
     })
   }
 

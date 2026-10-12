@@ -938,7 +938,7 @@ export const register: Register = on => {
     const now = await $.clock.now()
     if (!isCold(s, now) || s.ctx < BIG_TOKENS) return next(e)
     if (s.guard === 'warn') {
-      if (s.hasBand) s.note = 'Not held: the guard is set to warn.'
+      if (s.hasBand) s.note = 'Your message went straight through, because the guard is set to warn.'
       else $.ui.log(`${guardText(s, now)} Sending anyway; keepwarm will hold the cache for ${fmtDuration(AUTO_WARM_MS)} once it lands.`)
       s.coldWritePending = true
       await release($)
@@ -952,7 +952,7 @@ export const register: Register = on => {
     }
     if (s.hasBand && !canHold(e.text, e.attachments)) {
       // No card can resend this one, and a block without a choice is what the card replaced: send it; the receipt shows the price.
-      s.note = 'Not held: a message with images or an @file mention can\'t wait on the card.'
+      s.note = 'Your message went straight through, because a message with an image or an @file mention can\'t be held.'
       s.coldWritePending = true
       await release($)
       return next(e)

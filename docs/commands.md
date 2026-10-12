@@ -1,6 +1,6 @@
 # cache-watch command reference
 
-Every command, label and setting in cache-watch 1.1.2. For the reasons behind them, see [How it works](how-it-works.md).
+Every command, label and setting in cache-watch 1.1.3. For the reasons behind them, see [How it works](how-it-works.md).
 
 ## /keepwarm
 
