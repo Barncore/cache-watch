@@ -1232,7 +1232,7 @@ describe('resume card', () => {
     await $.classic.SessionStart(coldResume)
     expect(w.logs.filter(line => line.startsWith('resuming cold'))).toEqual([])
     await clock.advance(RESUME_LOG_AFTER_MS + 1)
-    expect(w.logs.filter(line => line.startsWith('resuming cold'))).toEqual(['resuming cold. The first message re-writes 230,418 tokens, about $1.84. /clear and paste a summary if you only need the conclusions.'])
+    expect(w.logs.filter(line => line.startsWith('resuming cold'))).toEqual(['resuming cold. The first message re-writes 230,418 tokens, about $1.84. Scrolling back is free: if you only need what this chat worked out, copy that, /clear and paste it in.'])
   })
 
   test('the rate comes from the engine estimate when there is one, else the price table', () => {

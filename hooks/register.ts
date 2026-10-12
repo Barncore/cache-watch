@@ -148,7 +148,7 @@ export function seedFromResume(s: State, e: ResumeFields, now: number): string |
   s.compacted = false
   if (e.prompt_cache_likely_expired !== true || s.ctx < BIG_TOKENS) return null
   const usd = typeof e.estimated_cache_write_usd === 'number' ? fmtUsd(e.estimated_cache_write_usd) : fmtUsd(coldUsd(s))
-  return `resuming cold. The first message re-writes ${s.ctx.toLocaleString('en-US')} tokens, about ${usd}. /clear and paste a summary if you only need the conclusions.`
+  return `resuming cold. The first message re-writes ${s.ctx.toLocaleString('en-US')} tokens, about ${usd}. Scrolling back is free: if you only need what this chat worked out, copy that, /clear and paste it in.`
 }
 
 /** The resume card's figures: Claude Code's own estimate of the cold write when the resume carried one, else the price table's. */
@@ -694,7 +694,7 @@ export const register: Register = on => {
             Text({ dimColor: true, children: [coldFor] }),
           ] }),
           stats,
-          Text({ wrap: 'wrap', children: ['Only need the conclusions? Start fresh, then paste a summary.'] }),
+          Text({ wrap: 'wrap', children: ['Scrolling back is free. If you only need what this chat worked out, copy that, press Start fresh and paste it in.'] }),
         ] }),
         Box({ key: 'resume-buttons', flexDirection: 'row', gap: 2, alignItems: 'center', children: [
           Button({ key: 'resume-fresh', label: 'Start fresh', onPress: () => { void freshFromResume($) } }),

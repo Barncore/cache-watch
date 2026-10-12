@@ -20,7 +20,7 @@ It's an estimate, and a good one, but some things can break a cache before the h
 
 ## The resume card
 
-When you open an old chat, Claude Code tells mods how long it's been since the last reply and estimates what the first message will cost. If the cache has likely gone cold and the conversation is big, cache-watch shows a card above the prompt box with that price next to a warm turn's. It's a heads-up before you type anything. Start fresh is often the better deal when you only need the conclusions of an old chat.
+When you open an old chat, Claude Code tells mods how long it's been since the last reply and estimates what the first message will cost. If the cache has likely gone cold and the conversation is big, cache-watch shows a card above the prompt box with that price next to a warm turn's. It's a heads-up before you type anything. Scrolling back through the old chat costs nothing; only sending into it does. So if you only need what it worked out, copy that out, start fresh and paste it in: the new conversation is a few hundred tokens instead of the whole old one.
 
 It used to be a plain line in the chat. A mod can't style lines in the chat, so the card took its place.
 
