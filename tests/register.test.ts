@@ -1191,15 +1191,39 @@ describe('resume card', () => {
     expect((await ui.find({ type: 'Text', text: /^(warm|cold|unknown|stopped)$/ }))?.text).toBe('cold')
   })
 
-  test('sending closes the note, and the hold card takes over for the cold send', async ($, on) => {
+  test('sending closes the note and goes straight through: the note already showed the price', async ($, on) => {
     mock.clock(on, { now: 400 * HOUR })
     world(on, [])
     await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
     const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'AbovePrompt', props: tall })
     await $.classic.SessionStart(coldResume)
-    await $.prompt.submit(prompt('Where were we?'))
+    expect((await ui.find({ type: 'Text', text: /consider starting a fresh chat/ }))?.text).toBe("A cold cache means the AI has to re-read everything in the session all over again. If the juice isn't worth the squeeze, consider starting a fresh chat.")
+    const r = await $.prompt.submit(prompt('Where were we?'))
+    expect(r.drop).toBe(undefined)
     expect(await ui.find({ text: /Resuming a cold chat/ })).toBe(undefined)
-    expect(await ui.find({ text: /Your message is on hold/ })).not.toBe(undefined)
+    expect(await ui.find({ text: /Your message is on hold/ })).toBe(undefined)
+  })
+
+  test('a dismissed note still counts as seen: the first send is not held', async ($, on) => {
+    mock.clock(on, { now: 400 * HOUR })
+    world(on, [])
+    await $.session.start({ ...session, surface: 'desktop', isInteractive: true })
+    const ui = await $.ui.mount({ plugin: 'cache-watch', surface: 'desktop', component: 'AbovePrompt', props: tall })
+    await $.classic.SessionStart(coldResume)
+    await ui.press({ key: 'resume-dismiss' })
+    expect((await $.prompt.submit(prompt('Where were we?'))).drop).toBe(undefined)
+    expect(await ui.find({ text: /Your message is on hold/ })).toBe(undefined)
+  })
+
+  test('a send before the plain line was logged is still held: the price was never shown', async ($, on) => {
+    const clock = mock.clock(on, { now: 400 * HOUR })
+    const w = world(on, [])
+    await $.session.start(session)
+    await $.classic.SessionStart(coldResume)
+    const r = await $.prompt.submit(prompt('Where were we?'))
+    expect(r.drop).toMatch(/^cache-watch: the prompt cache went cold/)
+    await clock.advance(RESUME_LOG_AFTER_MS + 1)
+    expect(w.logs.filter(line => line.startsWith('resuming cold'))).toEqual([])
   })
 
   test('Start fresh clears the conversation; /cache-watch fresh and dismiss are its twins', async ($, on) => {
@@ -1232,7 +1256,7 @@ describe('resume card', () => {
     await $.classic.SessionStart(coldResume)
     expect(w.logs.filter(line => line.startsWith('resuming cold'))).toEqual([])
     await clock.advance(RESUME_LOG_AFTER_MS + 1)
-    expect(w.logs.filter(line => line.startsWith('resuming cold'))).toEqual(["resuming cold. The first message re-writes 230,418 tokens, about $1.84. If the cost isn't worth the squeeze, consider starting a fresh chat."])
+    expect(w.logs.filter(line => line.startsWith('resuming cold'))).toEqual(["resuming cold. The first message re-writes 230,418 tokens, about $1.84. A cold cache means the AI has to re-read everything in the session all over again. If the juice isn't worth the squeeze, consider starting a fresh chat."])
   })
 
   test('the rate comes from the engine estimate when there is one, else the price table', () => {

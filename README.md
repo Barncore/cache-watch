@@ -12,6 +12,10 @@ The footer while the cache is warm: how long it has left before it goes cold.
 
 The same footer once the cache has gone cold.
 
+![The resume card above the prompt box: "Resuming a cold chat", cold for 5d 19h, Send it now $15.91 against A warm turn $0.20, the tip about starting fresh, and the Start fresh and Dismiss buttons](docs/images/resume-card.png)
+
+Opening a 795k-token chat that went cold almost a week ago. The card shows what your first message will cost before you type anything.
+
 ![The hold card above the prompt box: "Your message is on hold", Send it now $4.43 against A warm turn $0.22, the held message, and the Pay and send, Start fresh and Show cache status buttons](docs/images/hold-card.png)
 
 Sending to a 442k-token conversation that went cold days ago. The message waits on a card until you choose.
@@ -19,11 +23,11 @@ Sending to a 442k-token conversation that went cold days ago. The message waits 
 ## What it does
 
 - **Footer status.** The footer next to the model picker reads `cache warm · 54m left` or `cache cold for 6m`. Warm is green, cold is orange, and the word is always there, so colour is never the only signal.
-- **Hold card.** When the cache has gone cold and the conversation is big (50,000 tokens or more), your next message waits on a card above the prompt box. The card puts what sending now costs next to what a warm turn would have cost. Then you pick:
+- **Hold card.** When the cache has gone cold and the conversation is big (50,000 tokens or more), your next message waits on a card above the prompt box. This is for a chat that went cold while you weren't looking, such as one left open over lunch. After a resume card your first message goes straight through, because you've already seen the price. The card puts what sending now costs next to what a warm turn would have cost. Then you pick:
   - **Pay and send** sends it as it is. cache-watch then keeps the cache warm for 3 hours, so you don't pay the re-write twice.
   - **Start fresh** runs `/clear` and puts your message back in the prompt box for a new conversation. `/resume` still brings the old one back.
   - **Show cache status** opens the status card inside the hold card.
-- **Resume card.** Open an old chat whose cache has gone cold and a card above the prompt box says what your first message will cost, with a **Start fresh** button for when the price isn't worth it. It goes when you send, start fresh or dismiss it.
+- **Resume card.** Open an old chat whose cache has gone cold and a card above the prompt box says what your first message will cost, with a **Start fresh** button for when the price isn't worth it. It goes when you send, start fresh or dismiss it, and your first message isn't held.
 - **Keepwarm.** `/keepwarm` keeps the cache warm for 6 hours, with a cheap ping 55 minutes after your last request. [How it works](docs/how-it-works.md) explains what a ping is and what it costs.
 
 The only request cache-watch makes of its own is the keepwarm ping: a one-line question over your conversation, whose reply is thrown away and never shows in the chat. It keeps a few settings in Claude Code's plugin store on your machine, listed in [the reference](docs/commands.md#what-it-stores).

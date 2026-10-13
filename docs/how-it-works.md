@@ -20,13 +20,13 @@ It's an estimate, and a good one, but some things can break a cache before the h
 
 ## The resume card
 
-When you open an old chat, Claude Code tells mods how long it's been since the last reply and estimates what the first message will cost. If the cache has likely gone cold and the conversation is big, cache-watch shows a card above the prompt box with that price next to a warm turn's. It's a heads-up before you type anything. Scrolling back through the old chat costs nothing; only sending into it does. So if you only need what it worked out, copy that out, start fresh and paste it in: the new conversation is a few hundred tokens instead of the whole old one.
+When you open an old chat, Claude Code tells mods how long it's been since the last reply and estimates what the first message will cost. If the cache has likely gone cold and the conversation is big, cache-watch shows a card above the prompt box with that price next to a warm turn's. It's a heads-up before you type anything, so your first message after it goes straight through instead of waiting on the hold card. Seeing the same price twice in a row tells you nothing new. Dismissing the card counts as seeing it. Scrolling back through the old chat costs nothing; only sending into it does. So if you only need what it worked out, copy that out, start fresh and paste it in: the new conversation is a few hundred tokens instead of the whole old one.
 
 It used to be a plain line in the chat. A mod can't style lines in the chat, so the card took its place.
 
 ## The hold card
 
-When the clock says cold and the conversation is at least 50,000 tokens, cache-watch holds your next message instead of sending it. The card shows two prices side by side: what sending now costs (the re-write at the cache-write rate) and what a warm turn would have cost (the same context at the read rate).
+When the clock says cold and the conversation is at least 50,000 tokens, cache-watch holds your next message instead of sending it. This catches the cases the resume card can't. One is a chat that stays open in the app while its cache runs out. Another is an old chat you reopen while its cache is still warm, which then goes cold while you read. The card shows two prices side by side: what sending now costs (the re-write at the cache-write rate) and what a warm turn would have cost (the same context at the read rate).
 
 The cold price is an upper bound. The context size Claude Code reports for a resumed session includes the last reply's output, and there's no separate figure to subtract. On one 15-day-old session, cache-tax's author saw an estimate of $6.61 against an actual write of $6.28.
 
@@ -43,6 +43,7 @@ Sending again also pays, whether it's the same message or a different one. The h
 Some messages are never held:
 
 - **Slash commands.** Anything starting with `/` passes straight through.
+- **Your first message after a resume card,** because the card already showed you the price. Where no card can draw, the plain line counts the same way, once it has been logged.
 - **Small conversations** under 50,000 tokens, where the re-write costs little.
 - **Messages with a pasted image or file, or an `@file` mention.** A mod can't resend those, so holding them would leave you with no button that works. They go through, and the price shows on the receipt pill.
 - **Everything, when the guard is set to warn** (`/cache-watch guard warn`). Then cold sends go through and the price shows on the receipt pill.

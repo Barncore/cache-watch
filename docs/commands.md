@@ -1,6 +1,6 @@
 # cache-watch command reference
 
-Every command, label and setting in cache-watch 1.1.3. For the reasons behind them, see [How it works](how-it-works.md).
+Every command, label and setting in cache-watch 1.2.0. For the reasons behind them, see [How it works](how-it-works.md).
 
 ## /keepwarm
 
@@ -90,10 +90,10 @@ Opening an old chat whose cache Claude Code reports as likely expired, with 50,0
 | Header | `CACHE WATCH`, "Resuming a cold chat", and how long the cache has been cold. |
 | Send it now | What your first message will cost to re-write the cache. This is Claude Code's own estimate when the resume carries one, and the rate shown is worked out from it. |
 | A warm turn | What the same turn would cost with the cache warm. |
-| Tip | "If the cost isn't worth the squeeze, consider starting a fresh chat." |
+| Tip | "A cold cache means the AI has to re-read everything in the session all over again. If the juice isn't worth the squeeze, consider starting a fresh chat." |
 | Buttons | **Start fresh** runs `/clear`. **Dismiss** closes the card. |
 
-The card goes when you send a message (a cold send then gets the hold card), run `/clear`, or press either button. Where no band draws, such as the VS Code panel, cache-watch logs a one-line version in the chat instead, 3 seconds after the session resumes.
+The card goes when you send a message, run `/clear`, or press either button. Your first message after it goes straight through, never held, because the card already showed you the price. The same goes for the plain line. Where no band draws, such as the VS Code panel, cache-watch logs a one-line version in the chat instead, 3 seconds after the session resumes.
 
 ## The receipt pill
 

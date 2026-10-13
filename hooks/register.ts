@@ -10,6 +10,7 @@ const TTL_MS = 60 * 60 * 1000
 const PING_AFTER_MS = 55 * 60 * 1000
 const MIN_PING_MS = 60 * 1000
 const AUTO_WARM_MS = 3 * 60 * 60 * 1000
+const RESUME_TIP = "A cold cache means the AI has to re-read everything in the session all over again. If the juice isn't worth the squeeze, consider starting a fresh chat."
 const DEFAULT_WINDOW_MS = 6 * 60 * 60 * 1000
 const BIG_TOKENS = 50000
 const PING_PROMPT = 'Reply with the single word: warm'
@@ -148,7 +149,7 @@ export function seedFromResume(s: State, e: ResumeFields, now: number): string |
   s.compacted = false
   if (e.prompt_cache_likely_expired !== true || s.ctx < BIG_TOKENS) return null
   const usd = typeof e.estimated_cache_write_usd === 'number' ? fmtUsd(e.estimated_cache_write_usd) : fmtUsd(coldUsd(s))
-  return `resuming cold. The first message re-writes ${s.ctx.toLocaleString('en-US')} tokens, about ${usd}. If the cost isn't worth the squeeze, consider starting a fresh chat.`
+  return `resuming cold. The first message re-writes ${s.ctx.toLocaleString('en-US')} tokens, about ${usd}. ${RESUME_TIP}`
 }
 
 /** The resume card's figures: Claude Code's own estimate of the cold write when the resume carried one, else the price table's. */
@@ -694,7 +695,7 @@ export const register: Register = on => {
             Text({ dimColor: true, children: [coldFor] }),
           ] }),
           stats,
-          Text({ wrap: 'wrap', children: ["If the cost isn't worth the squeeze, consider starting a fresh chat."] }),
+          Text({ wrap: 'wrap', children: [RESUME_TIP] }),
         ] }),
         Box({ key: 'resume-buttons', flexDirection: 'row', gap: 2, alignItems: 'center', children: [
           Button({ key: 'resume-fresh', label: 'Start fresh', onPress: () => { void freshFromResume($) } }),
@@ -837,6 +838,8 @@ export const register: Register = on => {
       // A card above the prompt where a band draws; the desktop app's band arrives after this event, so wait before falling back.
       await update($, resumed, () => resumeNoteFrom(s, e.estimated_cache_write_usd))
       $.clock.after(RESUME_LOG_AFTER_MS, () => { void resumeFallback($, s, line) })
+      // The resume note already showed this cold spell's price, so the first send goes straight through, never held.
+      s.ackedAt = s.lastRequestAt
     }
     // The seeded clock decides whether a restored or always window pings before the first turn: never when it is cold.
     await arm($, s)
@@ -932,20 +935,24 @@ export const register: Register = on => {
     if (e.origin.kind === 'plugin') return next(e)
     // The person moved on: the last receipt has been seen.
     if (await read($, receipt)) await update($, receipt, () => null)
-    // The resume note has done its job once the person writes; a cold send gets the hold card instead.
-    if (await read($, resumed)) await update($, resumed, () => null)
+    // The resume note has done its job once the person writes.
+    if (await read($, resumed)) {
+      // Where no band drew, a send inside the fallback's wait means the person never saw the price, so it can still be held.
+      if (!s.hasBand) s.ackedAt = 0
+      await update($, resumed, () => null)
+    }
     if (typeof e.text !== 'string' || e.text.trimStart().startsWith('/')) return next(e)
     const now = await $.clock.now()
     if (!isCold(s, now) || s.ctx < BIG_TOKENS) return next(e)
-    if (s.guard === 'warn') {
-      if (s.hasBand) s.note = 'Your message went straight through, because the guard is set to warn.'
-      else $.ui.log(`${guardText(s, now)} Sending anyway; keepwarm will hold the cache for ${fmtDuration(AUTO_WARM_MS)} once it lands.`)
+    if (s.ackedAt === s.lastRequestAt) {
+      s.ackedAt = 0
       s.coldWritePending = true
       await release($)
       return next(e)
     }
-    if (s.ackedAt === s.lastRequestAt) {
-      s.ackedAt = 0
+    if (s.guard === 'warn') {
+      if (s.hasBand) s.note = 'Your message went straight through, because the guard is set to warn.'
+      else $.ui.log(`${guardText(s, now)} Sending anyway; keepwarm will hold the cache for ${fmtDuration(AUTO_WARM_MS)} once it lands.`)
       s.coldWritePending = true
       await release($)
       return next(e)
