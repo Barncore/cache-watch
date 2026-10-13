@@ -4,21 +4,25 @@ A Claude Code mod that watches your prompt cache, so a message to an old convers
 
 It shows whether the cache is warm or cold in the prompt footer. When a send would re-write a cold cache, it holds the message and shows you the price first. And it can keep the cache warm while you're away. It's a fork of Karan Bansal's [cache-tax](https://github.com/karanb192/cache-tax), reworked for the Claude desktop app.
 
+The footer while the cache is warm, with how long it has left before it goes cold:
+
 ![The prompt footer reading "cache warm · 54m left" in green, next to the model picker](docs/images/footer-warm.png)
 
-The footer while the cache is warm: how long it has left before it goes cold.
+The same footer once the cache has gone cold:
 
 ![The prompt footer reading "cache cold for 5d 20h" in orange](docs/images/footer-cold.png)
 
-The same footer once the cache has gone cold.
+Opening a 795k-token chat that went cold almost a week ago. The card shows what your first message will cost before you type anything:
 
 ![The resume card above the prompt box: "Resuming a cold chat", cold for 5d 19h, Send it now $15.91 against A warm turn $0.20, the tip about starting fresh, and the Start fresh and Dismiss buttons](docs/images/resume-card.png)
 
-Opening a 795k-token chat that went cold almost a week ago. The card shows what your first message will cost before you type anything.
+Sending to a 442k-token conversation that went cold days ago. The message waits on a card until you choose:
 
 ![The hold card above the prompt box: "Your message is on hold", Send it now $4.43 against A warm turn $0.22, the held message, and the Pay and send, Start fresh and Show cache status buttons](docs/images/hold-card.png)
 
-Sending to a 442k-token conversation that went cold days ago. The message waits on a card until you choose.
+After a cold write is paid, a receipt says what it cost, and keepwarm holds the cache for 3 hours. This message had an `@file` mention, so it couldn't be held and went straight through:
+
+![The receipt above the prompt box, with a shield icon: "Cold write paid: $1.15 for 115k tokens. Keepwarm holds the cache for 3h00m.", then in dim text why the message went straight through, and "/keepwarm off to stop"](docs/images/receipt.png)
 
 ## What it does
 
@@ -34,13 +38,17 @@ The only request cache-watch makes of its own is the keepwarm ping: a one-line q
 
 ### Keepwarm in action
 
+Type `/keepwarm` and the command menu says what it takes:
+
 ![Typing /keepwarm in the prompt box: the command menu shows keepwarm and its description, while the footer reads "cache warm · 47m left"](docs/images/keepwarm-menu.png)
 
-Type `/keepwarm` and the command menu says what it takes: nothing for 6 hours, a window such as `90m`, `always`, `off` or `status`. Before you arm it, the footer counts down the cache's own hour: 47 minutes left here.
+That's nothing for 6 hours, a window such as `90m`, `always`, `off` or `status`. Before you arm it, the footer counts down the cache's own hour: 47 minutes left here.
+
+`/keepwarm 6h` arms a six-hour window:
 
 ![After sending /keepwarm 6h, the reply reads "keepwarm on for 6h00m, a ping 55m after each idle stretch keeps the cache read, not re-written", and the footer reads "cache warm · 6h00m left"](docs/images/keepwarm-on.png)
 
-`/keepwarm 6h` arms a six-hour window. The reply confirms it, and the footer switches from the cache's hour to the window's time: 6h00m left. From here, every time you go quiet for 55 minutes, a ping keeps the cache warm until the window runs out.
+The reply confirms it, and the footer switches from the cache's hour to the window's time: 6h00m left. From here, every time you go quiet for 55 minutes, a ping keeps the cache warm until the window runs out.
 
 ## Install
 
